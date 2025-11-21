@@ -1,3 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Remote Display</title>
+
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      font-family: system-ui, sans-serif;
+      color: white;
+      background-image: url("./background.jpg"); /* or set by JS from Sheets */
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5); /* ✅ darken/lighen here */
+      z-index: 0;
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      padding: 6vh 6vw;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    }
+
+    .content-panel {
+      display: inline-block;
+      padding: 4vh 4vw;
+      background: rgba(0, 0, 0, 0.55); /* ✅ panel darkness here */
+      border-radius: 20px;
+      max-width: 90vw;
+    }
+  </style>
+</head>
+
 <body id="pageBody">
   <div class="overlay"></div>
   
@@ -36,3 +79,4 @@
   setInterval(refreshDisplay, 5000); // then every 5 sec
 </script>
 </body>
+</html>
