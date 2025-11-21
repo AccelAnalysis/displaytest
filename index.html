@@ -127,7 +127,7 @@
       // === Extract YouTube ID from various formats ===
       let ytId = null;
       if (data.videoUrl && data.videoUrl.trim()) {
-        const match = data.videoUrl.match(/(?:youtube\.com\/(?:.*v=|embed\/|watch\?v=)|youtu\.be\/)([^?&"'>]+)/i);
+	const match = data.videoUrl.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/i);
         ytId = match ? match[1] : null;
       }
 
