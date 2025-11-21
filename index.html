@@ -1,0 +1,24 @@
+<div id="headline" style="font-size:48px;font-weight:700;"></div>
+<div id="subhead" style="font-size:28px;margin-top:10px;"></div>
+<div id="status" style="font-size:24px;margin-top:18px;color:crimson;"></div>
+
+<script>
+  const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec";
+
+  async function refreshDisplay() {
+    try {
+      const res = await fetch(API_URL, { cache: "no-store" });
+      const data = await res.json();
+
+      document.getElementById("headline").textContent = data.headline || "";
+      document.getElementById("subhead").textContent  = data.subhead  || "";
+      document.getElementById("status").textContent   = data.status   || "";
+
+    } catch (err) {
+      console.error("Display refresh failed", err);
+    }
+  }
+
+  refreshDisplay();                 // load immediately
+  setInterval(refreshDisplay, 5000); // then every 5 sec
+</script>
