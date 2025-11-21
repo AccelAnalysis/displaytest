@@ -13,6 +13,15 @@
       document.getElementById("headline").textContent = data.headline || "";
       document.getElementById("subhead").textContent  = data.subhead  || "";
       document.getElementById("status").textContent   = data.status   || "";
+ 
+      
+  // ✅ Background from sheet
+        if (data.bgUrl) {
+          document.getElementById("pageBody").style.backgroundImage = `url('${data.bgUrl}')`;
+          document.getElementById("pageBody").style.backgroundSize = "cover";
+          document.getElementById("pageBody").style.backgroundPosition = "center";
+          document.getElementById("pageBody").style.backgroundRepeat = "no-repeat";
+        }
 
     } catch (err) {
       console.error("Display refresh failed", err);
