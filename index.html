@@ -11,7 +11,7 @@
       height: 100vh;
       font-family: system-ui, sans-serif;
       color: white;
-      background-image: url("./background.jpg"); /* or set by JS from Sheets */
+      background-image: url("./background.jpg"); 
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
@@ -20,7 +20,7 @@
     .overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.5); /* ✅ darken/lighen here */
+      background: rgba(0,0,0,0.5);
       z-index: 0;
     }
 
@@ -34,7 +34,7 @@
     .content-panel {
       display: inline-block;
       padding: 4vh 4vw;
-      background: rgba(0, 0, 0, 0.55); /* ✅ panel darkness here */
+      background: rgba(0, 0, 0, 0.55);
       border-radius: 20px;
       max-width: 90vw;
     }
@@ -42,42 +42,77 @@
 </head>
 
 <body id="pageBody">
+
+<video id="bgVideo" autoplay muted loop playsinline
+       style="
+         position: fixed;
+         top: 0;
+         left: 0;
+         width: 100%;
+         height: 100%;
+         object-fit: cover;
+         z-index: -2;
+         display: none;  /* stays hidden until a video is loaded */
+       ">
+</video>
+
   <div class="overlay"></div>
   
-<div class="content">
-  <div id="headline" style="font-size:48px;font-weight:700;"></div>
-  <div id="subhead" style="font-size:28px;margin-top:10px;"></div>
-  <div id="status" style="font-size:24px;margin-top:18px;color:crimson;"></div>
-</div> 
-  
-<script>
-  const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec";
+  <div class="content">
+    <div id="headline" style="font-size:48px;font-weight:700;"></div>
+    <div id="subhead" style="font-size:28px;margin-top:10px;"></div>
+    <div id="status" style="font-size:24px;margin-top:18px;color:crimson;"></div>
+  </div> <!-- ✅ THIS WAS MISSING -->
 
-  async function refreshDisplay() {
-    try {
-      const res = await fetch(API_URL, { cache: "no-store" });
-      const data = await res.json();
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec";
 
-      document.getElementById("headline").textContent = data.headline || "";
-      document.getElementById("subhead").textContent  = data.subhead  || "";
-      document.getElementById("status").textContent   = data.status   || "";
- 
-      
-  // ✅ Background from sheet
-        if (data.bgUrl) {
-          document.getElementById("pageBody").style.backgroundImage = `url('${data.bgUrl}')`;
-          document.getElementById("pageBody").style.backgroundSize = "cover";
-          document.getElementById("pageBody").style.backgroundPosition = "center";
-          document.getElementById("pageBody").style.backgroundRepeat = "no-repeat";
-        }
+    async function refreshDisplay() {
+      try {
+        const res = await fetch(API_URL, { cache: "no-store" });
+        const data = await res.json();
 
-    } catch (err) {
-      console.error("Display refresh failed", err);
-    }
+        document.getElementById("headline").textContent = data.headline || "";
+        document.getElementById("subhead").textContent  = data.subhead  || "";
+        document.getElementById("status").textContent   = data.status   || "";
+
+// --- BACKGROUND IMAGE ---
+const body = document.getElementById("pageBody");
+const bgVideo = document.getElementById("bgVideo");
+
+// If a video URL exists → use video, hide static image
+if (data.videoUrl && data.videoUrl.trim() !== "") {
+
+  // Hide static image
+  body.style.backgroundImage = "none";
+
+  // Set the video source
+  if (bgVideo.src !== data.videoUrl) {
+    bgVideo.src = data.videoUrl;
   }
 
-  refreshDisplay();                 // load immediately
-  setInterval(refreshDisplay, 5000); // then every 5 sec
-</script>
+  bgVideo.style.display = "block";  // show video
+
+} else {
+  // No video → show static image
+  bgVideo.style.display = "none";
+
+  if (data.bgUrl && data.bgUrl.trim() !== "") {
+    body.style.backgroundImage = `url('${data.bgUrl}')`;
+    body.style.backgroundSize = "cover";
+    body.style.backgroundPosition = "center";
+    body.style.backgroundRepeat = "no-repeat";
+  }
+}
+
+      } catch (err) {
+        console.error("Display refresh failed", err);
+      }
+    }
+
+    refreshDisplay();
+    setInterval(refreshDisplay, 5000);
+  </script>
+
 </body>
 </html>
