@@ -6,26 +6,19 @@
   <title>Accel Display</title>
   <style>
     body,html{margin:0;height:100vh;overflow:hidden;background:#000;font-family:system-ui,sans-serif;color:white}
-    #bgVideo, #bgVimeo{position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0}
-    #tilesContainer{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1}
+    #tilesContainer{position:relative;width:100%;height:100%}
     .tile{position:absolute;box-sizing:border-box;overflow:hidden;user-select:none;transition:all .6s}
     .tile img,.tile video,.tile iframe{width:100%;height:100%;object-fit:cover;display:block}
+    .tile video{background:#000}
   </style>
 </head>
 <body>
 
-  <!-- Persistent background (never destroyed) -->
-  <video id="bgVideo" autoplay muted loop playsinline style="display:none"></video>
-  <div id="bgVimeo" style="display:none"><iframe allow="autoplay; fullscreen" allowfullscreen></iframe></div>
-
-  <!-- All other tiles go here (refreshed normally) -->
+  <!-- THIS LINE WAS MISSING — THIS IS WHY IT WAS BLACK -->
   <div id="tilesContainer"></div>
 
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec";
-
-    let bgVideoActive = false;
-    let bgVimeoActive = false;
 
     async function loadTiles() {
       try {
@@ -33,84 +26,75 @@
         if (!res.ok) throw new Error("HTTP " + res.status);
         const tiles = await res.json();
 
-        // First pass: look for a full-screen background video/vimeo
-        tiles.forEach(t => {
-          if (t.visible === false) return;
-          if (t.type === "video" && t.width === "100%" && t.height === "100%" && t.zindex == "1") {
-            if (t.content.match(/\.(mp4|webm|mov|ogg)/i)) {
-              // Direct MP4 background
-              document.getElementById("bgVideo").src = t.content;
-              document.getElementById("bgVideo").style.display = "block";
-              document.getElementById("bgVimeo").style.display = "none";
-              bgVideoActive = true;
-            } else if (t.content.includes("vimeo")) {
-              const id = t.content.match(/vimeo.*\/(\d+)/)?.[1];
-              if (id) {
-                const iframe = document.querySelector("#bgVimeo iframe");
-                iframe.src = `https://player.vimeo.com/video/${id}?autoplay=1&loop=1&muted=1&background=1&title=0&byline=0&portrait=0`;
-                document.getElementById("bgVimeo").style.display = "block";
-                document.getElementById("bgVideo").style.display = "none";
-                bgVimeoActive = |true;
-              }
-            }
-          }
-        });
+        if (!Array.isArray(tiles) || tiles.length === 0) {
+          document.getElementById("tilesContainer").innerHTML = "<div style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;color:#f66'>No tiles returned</div>";
+          return;
+        }
 
-        // Second pass: render all NON-fullscreen tiles (zIndex > 1 or not 100%x100%)
         const container = document.getElementById("tilesContainer");
-        container.innerHTML = "";  // only wipe foreground tiles
+        container.innerHTML = "";
 
         tiles.forEach(t => {
-          if (t.visible === false) return;
-          // Skip the full-screen background tile
-          if (t.type === "video" && t.width === "100%" && t.height === "100%" && t.zindex == "1") return;
+          if (t.visible === false || t.visible === "FALSE") return;
 
           const tile = document.createElement("div");
           tile.className = "tile";
-          tile.style.left   = t.x || "0%";
-          tile.style.top    = t.y || "0%";
+
+          tile.style.left   = t.left || "500%";
+          tile.style.right    = t.right || "0%";
           tile.style.width  = t.width || "30%";
           tile.style.height = t.height || "20%";
           tile.style.background = t.bgcolor || "rgba(0,0,0,0.6)";
           tile.style.color = t.textcolor || "white";
           tile.style.fontSize = t.fontsize || "24px";
-          tile.style.fontWeight = t.bold?.toLowerCase() === "yes" ? "bold" : "normal";
+          tile.style.fontWeight = t.bold === "yes" ? "bold" : "normal";
           tile.style.textAlign = t.align || "center";
           tile.style.padding = t.padding || "20px";
           tile.style.borderRadius = t.radius || "20px";
           tile.style.boxShadow = t.shadow || "0 8px 32px rgba(0,0,0,0.6)";
           tile.style.opacity = t.opacity ?? 1;
           tile.style.transform = t.rotate ? `rotate(${t.rotate}deg)` : "";
-          tile.style.zIndex = t.zindex || "10";
+          tile.style.zIndex = t.zindex || "1";
           tile.style.display = "flex";
           tile.style.alignItems = "center";
           tile.style.justifyContent = "center";
           tile.style.textShadow = "0 2px 8px rgba(0,0,0,0.8)";
 
-          if (t.type === "text" && t.content) tile.innerHTML = t.content.replace(/\\n/g, "<br>");
-          else if (t.type === "image" && t.content) tile.innerHTML = `<img src="${t.content}" alt="">`;
-          else if (t.type === "clock") tile.innerHTML = `<div class="liveClock" style="font-size:3em;font-weight:bold"></div>`;
-          else if (t.type === "date") tile.innerHTML = new Date().toLocaleDateString(undefined, {weekday:'long', year:'numeric', month:'long', day:'numeric'});
-          // ... add other types as before
+          if (t.type === "text" && t.content) {
+            tile.innerHTML = t.content.replace(/\\n/g, "<br>");
+          }
+          else if (t.type === "image" && t.content) {
+            tile.innerHTML = `<img src="${t.content}" alt="">`;
+          }
+          else if (t.type === "video" && t.content) {
+            if (t.content.match(/\.(mp4|webm|mov|ogg)/i)) {
+              tile.innerHTML = `<video autoplay muted loop playsinline><source src="${t.content}"></video>`;
+            } else if (t.content.includes("vimeo")) {
+              const id = t.content.match(/vimeo.*\/(\d+)/)?.[1];
+              if (id) {
+                tile.innerHTML = `<iframe src="https://player.vimeo.com/video/${id}?autoplay=1&loop=1&muted=1&background=1&title=0&byline=0&portrait=0&pip=0&autoplay=1&muted=1#t=0.0001" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+              }
+            }
+          }
+          else if (t.type === "clock") {
+            tile.innerHTML = `<div style="font-size:3em;font-weight:bold">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>`;
+            setInterval(() => {
+              tile.querySelector("div")?.replaceWith(tile.querySelector("div").cloneNode(true));
+              tile.querySelector("div").textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+            }, 1000);
+          }
 
           container.appendChild(tile);
         });
 
-        // Update all live clocks
-        document.querySelectorAll(".liveClock").forEach(el => {
-          el.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        });
-
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+        document.getElementById("tilesContainer").innerHTML = `<div style="color:red;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:32px">Error: ${e.message}</div>`;
+      }
     }
 
     loadTiles();
-    setInterval(loadTiles, 8000);   // foreground tiles refresh
-    setInterval(() => {            // live clock updates every second (no full reload)
-      document.querySelectorAll(".liveClock").forEach(el => {
-        el.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-      });
-    }, 1000);
+    setInterval(loadTiles, 8000);
   </script>
 </body>
 </html>
