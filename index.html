@@ -13,8 +13,11 @@
   </style>
 </head>
 <body>
+  
+  <!-- Persistent background (never destroyed) -->
+  <video id="bgVideo" autoplay muted loop playsinline style="display:none"></video>
+  <div id="bgVimeo" style="display:none"><iframe allow="autoplay; fullscreen" allowfullscreen></iframe></div>
 
-  <!-- THIS LINE WAS MISSING — THIS IS WHY IT WAS BLACK -->
   <div id="tilesContainer"></div>
 
   <script>
@@ -63,6 +66,7 @@
           if (t.type === "text" && t.content) {
             tile.innerHTML = t.content.replace(/\\n/g, "<br>");
           }
+          else if (t.type === "date") tile.innerHTML = new Date().toLocaleDateString(undefined, {weekday:'long', year:'numeric', month:'long', day:'numeric'});
           else if (t.type === "image" && t.content) {
             tile.innerHTML = `<img src="${t.content}" alt="">`;
           }
