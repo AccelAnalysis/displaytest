@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Remote Display</title>
-
   <style>
     body {
       margin: 0;
@@ -16,14 +15,12 @@
       background-position: center;
       background-repeat: no-repeat;
     }
-
     .overlay {
       position: fixed;
       inset: 0;
       background: rgba(0,0,0,0.5);
       z-index: 0;
     }
-
     .content {
       position: relative;
       z-index: 1;
@@ -32,13 +29,16 @@
     }
   </style>
 </head>
-
 <body id="pageBody">
-
-  <!-- Direct video background (ad-free, perfect loop) -->
+  <!-- Direct video background (for MP4/etc.) -->
   <video id="bgVideo" autoplay muted loop playsinline
          style="position:fixed; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:-2; display:none;">
   </video>
+
+  <!-- Vimeo iframe container (new) -->
+  <div id="vimeoContainer" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:-2; display:none; overflow:hidden;">
+    <iframe id="vimeoPlayer" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen style="position:absolute; top:0; left:0; width:100%; height:100%;"></iframe>
+  </div>
 
   <div class="overlay"></div>
   
@@ -61,21 +61,37 @@
         document.getElementById("subhead").textContent  = data.subhead  || "";
         document.getElementById("status").textContent   = data.status   || "";
 
-        const body    = document.getElementById("pageBody");
-        const bgVideo = document.getElementById("bgVideo");
+        const body         = document.getElementById("pageBody");
+        const bgVideo      = document.getElementById("bgVideo");
+        const vimeoContain = document.getElementById("vimeoContainer");
+        const vimeoPlayer  = document.getElementById("vimeoPlayer");
 
-        // 1. Direct video file (.mp4, .webm, .ogg, .m4v) → highest priority, 100% ad-free
+        // 1. Direct video file (.mp4, etc.) → use <video> tag
         if (data.videoUrl && typeof data.videoUrl === "string" && data.videoUrl.match(/\.(mp4|webm|ogg|m4v|mov)($|\?)/i)) {
           body.style.backgroundImage = "none";
-          bgVideo.src = data.videoUrl;           // change source
-          bgVideo.style.display = "block";       // show video
+          vimeoContain.style.display = "none";
+          bgVideo.src = data.videoUrl;
+          bgVideo.style.display = "block";
           return;
         }
 
-        // 2. No direct video → fall back to custom static background image
-        bgVideo.style.display = "none";
-        bgVideo.src = ""; // clear video source to save bandwidth
+        // 2. Vimeo URL → use iframe embed (extract ID and build params)
+        if (data.videoUrl && typeof data.videoUrl === "string" && data.videoUrl.includes('vimeo.com') && data.videoUrl.includes('/video/')) {
+          const videoMatch = data.videoUrl.match(/\/video\/(\d+)/);
+          if (videoMatch) {
+            const videoId = videoMatch[1];
+            body.style.backgroundImage = "none";
+            bgVideo.style.display = "none";
+            vimeoPlayer.src = `https://player.vimeo.com/video/${videoId}?autoplay=1&loop=1&muted=1&background=1&title=0&byline=0&portrait=0`;
+            vimeoContain.style.display = "block";
+            return;
+          }
+        }
 
+        // 3. No video → static background
+        bgVideo.style.display = "none";
+        vimeoContain.style.display = "none";
+        vimeoPlayer.src = "";
         if (data.bgUrl && typeof data.bgUrl === "string" && data.bgUrl.trim()) {
           body.style.backgroundImage = `url('${data.bgUrl.trim()}')`;
         } else {
@@ -90,7 +106,6 @@
       }
     }
 
-    // Initial load + refresh every 5 seconds
     refreshDisplay();
     setInterval(refreshDisplay, 5000);
   </script>
