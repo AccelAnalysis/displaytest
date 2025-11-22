@@ -65,7 +65,7 @@
         const bgVideo = document.getElementById("bgVideo");
 
         // 1. Direct video file (.mp4, .webm, .ogg, .m4v) → highest priority, 100% ad-free
-        if (data.videoUrl && typeof data.videoUrl === "string" && data.videoUrl.match(/\.(mp4|webm|ogg|m4v)($|\?)/i)) {
+        if (data.videoUrl && typeof data.videoUrl === "string" && data.videoUrl.match(/\.(mp4|webm|ogg|m4v|mov)($|\?)/i)) {
           body.style.backgroundImage = "none";
           bgVideo.src = data.videoUrl;           // change source
           bgVideo.style.display = "block";       // show video
