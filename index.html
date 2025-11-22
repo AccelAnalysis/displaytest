@@ -10,6 +10,14 @@
     .tile{position:absolute;box-sizing:border-box;overflow:hidden;user-select:none;transition:all .6s}
     .tile img,.tile video,.tile iframe{width:100%;height:100%;object-fit:cover;display:block}
     .tile video{background:#000}
+    .marquee {
+  white-space: nowrap;
+  animation: marquee 15s linear infinite;
+}
+@keyframes marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
   </style>
 </head>
 <body>
@@ -84,6 +92,160 @@
               tile.querySelector("div").textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
             }, 1000);
           }
+else if (t.type === "clock") {
+  tile.innerHTML = `<div style="font-size:3em;font-weight:bold">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>`;
+  setInterval(() => {
+    tile.querySelector("div")?.replaceWith(tile.querySelector("div").cloneNode(true));
+    tile.querySelector("div").textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  }, 1000);
+}
+else if (t.type === "shape") {
+  tile.innerHTML = "";
+  // color, radius, opacity already handled by your existing style code
+}
+else if (t.type === "iframe" && t.content) {
+  tile.innerHTML = `<iframe src="${t.content}" style="width:100%;height:100%;border:0;"></iframe>`;
+}
+else if (t.type === "date") {
+  tile.innerHTML = new Date().toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
+}
+else if (t.type === "weather" && t.content) {
+  fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=3`)
+    .then(r => r.text())
+    .then(txt => { tile.innerHTML = txt; })
+    .catch(() => { tile.innerHTML = "Weather unavailable"; });
+}
+else if (t.type === "rss" && t.content) {
+  fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(t.content)}`)
+    .then(r => r.json())
+    .then(feed => {
+      if (!feed.items) { tile.innerHTML = "RSS unavailable"; return; }
+      const headlines = feed.items.map(i => i.title).join(" • ");
+      tile.innerHTML = `<div class="rssTicker">${headlines}</div>`;
+      tile.querySelector(".rssTicker").style.whiteSpace = "nowrap";
+      tile.querySelector(".rssTicker").style.animation = "scrollLeft 30s linear infinite";
+    })
+    .catch(() => { tile.innerHTML = "RSS error"; });
+}
+else if (t.type === "quote") {
+  fetch("https://api.quotable.io/random")
+    .then(r => r.json())
+    .then(q => { tile.innerHTML = `"${q.content}" — ${q.author}`; })
+    .catch(() => { tile.innerHTML = "Quote unavailable"; });
+}
+else if (t.type === "countdown" && t.content) {
+  function updateCountdown() {
+    const end = new Date(t.content);
+    const now = new Date();
+    const diff = end - now;
+
+    if (diff <= 0) {
+      tile.innerHTML = "Time's up!";
+      return;
+    }
+
+    const days = Math.floor(diff / (1000*60*60*24));
+    const hours = Math.floor((diff / (1000*60*60)) % 24);
+    const mins = Math.floor((diff / (1000*60)) % 60);
+    const secs = Math.floor((diff / 1000) % 60);
+
+    tile.innerHTML = `${days}d ${hours}h ${mins}m ${secs}s`;
+  }
+  updateCountdown();
+  setInterval(updateCountdown, 1000);
+}
+else if (t.type === "youtube" && t.content) {
+  const id = t.content.match(/(?:v=|youtu\.be\/)([^&]+)/)?.[1];
+  if (id) {
+    tile.innerHTML = `
+      <iframe 
+        src="https://www.youtube.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}&controls=0&modestbranding=1"
+        style="width:100%;height:100%;border:0;"
+        allow="autoplay"
+      ></iframe>`;
+  }
+}
+else if (t.type === "timer" && t.content) {
+  function updateTimer() {
+    const start = new Date(t.content);
+    const now = new Date();
+    const diff = now - start;
+
+    const days  = Math.floor(diff / (1000*60*60*24));
+    const hours = Math.floor((diff / (1000*60*60)) % 24);
+    const mins  = Math.floor((diff / (1000*60)) % 60);
+    const secs  = Math.floor((diff / 1000) % 60);
+
+    tile.innerHTML = `${days}d ${hours}h ${mins}m ${secs}s`;
+  }
+  updateTimer();
+  setInterval(updateTimer, 1000);
+}
+else if (t.type === "weather_detailed" && t.content) {
+  fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`)
+    .then(r => r.json())
+    .then(w => {
+      const now = w.current_condition[0];
+      tile.innerHTML = `
+        ${now.temp_F}°F<br>
+        ${now.weatherDesc[0].value}<br>
+        Wind ${now.windspeedMiles} mph<br>
+        Humidity ${now.humidity}%<br>
+      `;
+    })
+    .catch(() => tile.innerHTML = "Weather unavailable");
+}
+else if (t.type === "stock" && t.content) {
+  fetch(`https://api.finage.co.uk/last/stock/${t.content}?apikey=demo`)
+    .then(r => r.json())
+    .then(s => { tile.innerHTML = `${t.content}: $${s.price}`; })
+    .catch(() => tile.innerHTML = "Stock error");
+}
+else if (t.type === "crypto" && t.content) {
+  fetch(`https://api.coinbase.com/v2/prices/${t.content}-USD/spot`)
+    .then(r => r.json())
+    .then(s => tile.innerHTML = `${t.content}: $${s.data.amount}`)
+    .catch(() => tile.innerHTML = "Crypto unavailable");
+}
+else if (t.type === "audio" && t.content) {
+  tile.innerHTML = `
+    <audio autoplay loop style="width:100%;">
+      <source src="${t.content}">
+    </audio>`;
+}
+else if (t.type === "qrcode" && t.content) {
+  tile.innerHTML = `
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(t.content)}">
+  `;
+}
+else if (t.type === "map" && t.content) {
+  tile.innerHTML = `
+    <iframe 
+      width="100%" height="100%" 
+      style="border:0;"
+      src="https://www.google.com/maps?q=${encodeURIComponent(t.content)}&output=embed">
+    </iframe>`;
+}
+else if (t.type === "map" && t.content) {
+  tile.innerHTML = `
+    <iframe 
+      width="100%" height="100%" 
+      style="border:0;"
+      src="https://www.google.com/maps?q=${encodeURIComponent(t.content)}&output=embed">
+    </iframe>`;
+}
+else if (t.type === "marquee" && t.content) {
+  tile.innerHTML = `<div class="marquee">${t.content}</div>`;
+}
+else if (t.type === "gradient" && t.content) {
+  const [c1,c2] = t.content.split(",");
+  tile.style.background = `linear-gradient(135deg, ${c1}, ${c2})`;
+}
 
           container.appendChild(tile);
         });
