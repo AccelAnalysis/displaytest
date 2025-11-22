@@ -1,100 +1,102 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Remote Display</title>
+  <title>Flexible Tile Display</title>
   <style>
-    body{margin:0;height:100vh;font-family:system-ui,sans-serif;color:white;background:#000;
-         background-image:url("./background.jpg");background-size:cover;background-position:center}
-    .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:0}
-    .content{position:relative;z-index:1;padding:6vh 6vw;text-shadow:0 2px 8px rgba(0,0,0,0.8)}
+    body,html{margin:0;height:100vh;overflow:hidden;background:#000;font-family:system-ui,sans-serif}
+    #tilesContainer{position:relative;width:100%;height:100%}
+    .tile{
+      position:absolute;
+      box-sizing:border-box;
+      overflow:hidden;
+      user-select:none;
+      transition:all 0.6s ease;
+    }
+    .tile img,.tile video,.tile iframe{width:100%;height:100%;object-fit:cover;display:block}
+    .tile video{background:#000}
   </style>
 </head>
-<body id="pageBody">
+<body>
 
-  <!-- Direct <video> background -->
-  <video id="bgVideo" autoplay muted loop playsinline
-         style="position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:-2;display:none"></video>
+<div id="tilesContainer"></div>
 
-  <!-- Vimeo container – allow autoplay on the DIV (critical for Safari & FireTV) -->
-  <div id="vimeoContainer" allow="autoplay; fullscreen; picture-in-picture"
-       style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:-2;display:none;overflow:hidden">
-    <iframe id="vimeoPlayer" frameborder="0" allowfullscreen
-            allow="autoplay; fullscreen; picture-in-picture"
-            style="position:absolute;top:0;left:0;width:100%;height:100%;border:0"></iframe>
-  </div>
+<script>
+  const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec";
 
-  <div class="overlay"></div>
-  <div class="content">
-    <div id="headline" style="font-size:48px;font-weight:700"></div>
-    <div id="subhead" style="font-size:28px;margin-top:10px"></div>
-    <div id="status" style="font-size:24px;margin-top:18px;color:crimson"></div>
-  </div>
+  async function loadTiles() {
+    try {
+      const res = await fetch(API_URL + "?t=" + Date.now());
+      const tiles = await res.json();
 
-  <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec";
+      const container = document.getElementById("tilesContainer");
+      container.innerHTML = "";  // clear old tiles
 
-    async function refreshDisplay() {
-      try {
-        const res = await fetch(API_URL, {cache:"no-store"});
-        const data = await res.json();
+      tiles.forEach(t => {
+        if (!t.visible || t.visible === "FALSE") return;
 
-        document.getElementById("headline").textContent = data.headline || "";
-        document.getElementById("subhead").textContent  = data.subhead  || "";
-        document.getElementById("status").textContent   = data.status   || "";
+        const tile = document.createElement("div");
+        tile.className = "tile";
 
-        const body         = document.getElementById("pageBody");
-        const bgVideo      = document.getElementById("bgVideo");
-        const vimeoContain = document.getElementById("vimeoContainer");
-        const vimeoPlayer  = document.getElementById("vimeoPlayer");
+        // Position & size (you can use % or px)
+        tile.style.left   = t.x || "0%";
+        tile.style.top    = t.y || "0%";
+        tile.style.width  = t.width || "30%";
+        tile.style.height = t.height || "20%";
 
-        // 1. Direct video files
-        if (data.videoUrl && typeof data.videoUrl==="string" && data.videoUrl.match(/\.(mp4|webm|ogg|m4v|mov)($|\?)/i)) {
-          body.style.backgroundImage = "none";
-          vimeoContain.style.display = "none";
-          bgVideo.src = data.videoUrl;
-          bgVideo.style.display = "block";
-          return;
+        // Photoshop-like styling
+        tile.style.background   = t.bgColor || "rgba(0,0,0,0.6)";
+        tile.style.color         = t.textColor || "white";
+        tile.style.fontSize      = t.fontSize || "24px";
+        tile.style.fontWeight    = t.bold ? "bold" : "normal";
+        tile.style.textAlign     = t.align || "center";
+        tile.style.padding       = t.padding || "20px";
+        tile.style.borderRadius  = t.radius || "20px";
+        tile.style.boxShadow     = t.shadow || "0 8px 32px rgba(0,0,0,0.6)";
+        tile.style.opacity       = t.opacity ?? 1;
+        tile.style.transform     = t.rotate ? `rotate(${t.rotate}deg)` : "";
+        tile.style.zIndex        = t.zIndex || "1";
+        tile.style.display       = "flex";
+        tile.style.alignItems    = "center";
+        tile.style.justifyContent= "center";
+        tile.style.textShadow    = "0 2px 8px rgba(0,0,0,0.8)";
+
+        // Content types
+        if (t.type === "text" && t.content) {
+          tile.innerHTML = t.content.replace(/\\n/g, "<br>");
         }
-
-        // 2. Vimeo – any vimeo.com link
-        let vimeoId = null;
-        if (data.videoUrl && data.videoUrl.includes("vimeo.com")) {
-          const m = data.videoUrl.match(/vimeo.*\/(\d+)/);
-          if (m) vimeoId = m[1];
+        else if (t.type === "image" && t.content) {
+          tile.innerHTML = `<img src="${t.content}" alt="">`;
         }
-
-        if (vimeoId) {
-          body.style.backgroundImage = "none";
-          bgVideo.style.display = "none";
-
-          const newSrc = `https://player.vimeo.com/video/${vimeoId}?autoplay=1&loop=1&muted=1&background=1&title=0&byline=0&portrait=0`;
-
-          // This tiny trick forces autoplay even on Safari
-          if (vimeoPlayer.src !== newSrc) {
-            vimeoPlayer.src = "";                // clear first
-            vimeoContain.style.display = "block";
-            setTimeout(() => { vimeoPlayer.src = newSrc; }, 50);
-          } else {
-            vimeoContain.style.display = "block";
+        else if (t.type === "video" && t.content) {
+          const isDirect = t.content.match(/\.(mp4|webm|mov|ogg)/i);
+          if (isDirect) {
+            tile.innerHTML = `<video autoplay muted loop playsinline><source src="${t.content}"></video>`;
+          } else if (t.content.includes("vimeo")) {
+            const id = t.content.match(/vimeo.*\/(\d+)/)?.[1];
+            if (id) {
+              tile.innerHTML = `<iframe src="https://player.vimeo.com/video/${id}?autoplay=1&loop=1&muted=1&background=1&title=0&byline=0&portrait=0" 
+                                       allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+            }
           }
-          return;
+        }
+        else if (t.type === "clock") {
+          tile.innerHTML = "<div id='liveClock' style='font-size:3em;font-weight:bold'></div>";
+          setInterval(() => {
+            document.getElementById("liveClock")?.innerText = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+          }, 1000);
         }
 
-        // 3. Fallback static background
-        bgVideo.style.display = "none";
-        vimeoContain.style.display = "none";
-        vimeoPlayer.src = "";
-        body.style.backgroundImage = data.bgUrl?.trim() ? `url('${data.bgUrl.trim()}')` : "url('./background.jpg')";
-        body.style.backgroundSize = "cover";
-        body.style.backgroundPosition = "center";
+        container.appendChild(tile);
+      });
 
-      } catch(e) { console.error(e); }
-    }
+    } catch (e) { console.error(e); }
+  }
 
-    refreshDisplay();
-    setInterval(refreshDisplay, 5000);
-  </script>
+  loadTiles();
+  setInterval(loadTiles, 8000);  // refresh every 8 seconds
+</script>
+
 </body>
 </html>
