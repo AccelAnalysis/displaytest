@@ -6,21 +6,21 @@
   <title>Accel Display</title>
   <style>
     body,html{margin:0;height:100vh;overflow:hidden;background:#000;font-family:system-ui,sans-serif;color:white}
-    #bgVideo, #bgVimeo{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;object-fit:cover}
-    #bgVimeo iframe{width:100%;height:100%;border:0}
+    #bgVideo{position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0}
+    #bgVimeo{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;display:none}
+    #bgVimeo iframe{width:100%;height:100%;border:none}
     #tilesContainer{position:absolute;top:0;left:0;width:100%;height:100%;z-index:10}
     .tile{position:absolute;box-sizing:border-box;overflow:hidden;user-select:none;transition:all .6s}
     .tile img,.tile video,.tile iframe{width:100%;height:100%;object-fit:cover;display:block}
-    .tile video{background:#000}
   </style>
 </head>
 <body>
 
-  <!-- Persistent full-screen background (never destroyed) -->
-  <video id="bgVideo" autoplay muted loop playsinline style="display:none"></video>
-  <div id="bgVimeo" style="display:none"></div>
+  <!-- Persistent full-screen background -->
+  <video id="bgVideo" autoplay muted loop playsinline></video>
+  <div id="bgVimeo"></div>
 
-  <!-- All foreground tiles (refreshed every 8s) -->
+  <!-- Foreground tiles -->
   <div id="tilesContainer"></div>
 
   <script>
@@ -29,19 +29,26 @@
     async function loadTiles() {
       try {
         const res = await fetch(API_URL + "?t=" + Date.now());
-        if (!res.ok) throw new Error("HTTP " + res.status);
         const tiles = await res.json();
 
-        // === 1. Handle persistent full-screen background (only once) ===
-        let bgSet = false;
-        tiles.forEach(t => {
-          if (bgSet || !t.visible) return;
-          if (t.type === "video" && t.width === "100%" && t.height === "100%" && parseInt(t.zindex || "0") <= 5) {
-            if (t.content.match(/\.(mp4|webm|mov|ogg)$/i)) {
-              document.getElementById("bgVideo").src = t.content;
-              document.getElementById("bgVideo").style.display = "block";
+        let backgroundSet = false;
+
+        // 1. Find and set persistent background (runs only once per change)
+        for (const t of tiles) {
+          if (backgroundSet || !t.visible) continue;
+          if (t.type === "video" && t.width === "100%" && t.height === "100%" && (!t.zindex || t.zindex <= 5)) {
+
+            // Direct MP4
+            if (t.content && t.content.match(/\.(mp4|webm|mov|ogg)$/i)) {
+              const vid = document.getElementById("bgVideo");
+              if (vid.src !== t.content) vid.src = t.content;
+              vid.style.display = "block";
               document.getElementById("bgVimeo").style.display = "none";
-            } else if (t.content.includes("vimeo")) {
+              backgroundSet = true;
+            }
+
+            // Vimeo
+            else if (t.content && t.content.includes("vimeo")) {
               const id = t.content.match(/vimeo.*\/(\d+)/)?.[1];
               if (id) {
                 document.getElementById("bgVimeo").innerHTML = 
@@ -49,20 +56,20 @@
                            allow="autoplay; fullscreen" allowfullscreen></iframe>`;
                 document.getElementById("bgVimeo").style.display = "block";
                 document.getElementById("bgVideo").style.display = "none";
+                backgroundSet = true;
               }
             }
-            bgSet = true;
           }
-        });
+        }
 
-        // === 2. Render all FOREGROUND tiles (refreshed every 8s) ===
+        // 2. Render all foreground tiles
         const container = document.getElementById("tilesContainer");
         container.innerHTML = "";
 
         tiles.forEach(t => {
-          if (!t.visible || t.visible === "FALSE") return;
+          if (!t.visible) return;
           // Skip the full-screen background tile
-          if (t.type === "video" && t.width === "100%" && t.height === "100%" && parseInt(t.zindex || "0") <= 5) return;
+          if (t.type === "video" && t.width === "100%" && t.height === "100%" && (!t.zindex || t.zindex <= 5)) return;
 
           const tile = document.createElement("div");
           tile.className = "tile";
@@ -74,7 +81,7 @@
           tile.style.background = t.bgcolor || "rgba(0,0,0,0.6)";
           tile.style.color = t.textcolor || "white";
           tile.style.fontSize = t.fontsize || "24px";
-          tile.style.fontWeight = t.bold?.toLowerCase() === "yes" ? "bold" : "normal";
+          tile.style.fontWeight = (t.bold||"").toLowerCase() === "yes" ? "bold" : "normal";
           tile.style.textAlign = t.align || "center";
           tile.style.padding = t.padding || "20px";
           tile.style.borderRadius = t.radius || "20px";
@@ -87,40 +94,27 @@
           tile.style.justifyContent = "center";
           tile.style.textShadow = "0 2px 8px rgba(0,0,0,0.8)";
 
-          if (t.type === "text" && t.content) {
-            tile.innerHTML = t.content.replace(/\\n/g, "<br>");
-          }
-          else if (t.type === "image" && t.content) {
-            tile.innerHTML = `<img src="${t.content}" alt="">`;
-          }
-          else if (t.type === "clock") {
-            tile.innerHTML = `<div class="clock">88:88</div>`;
-          }
-          else if (t.type === "date") {
-            tile.innerHTML = new Date().toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric', year:'numeric'});
-          }
+          if (t.type === "text" && t.content) tile.innerHTML = t.content.replace(/\\n/g, "<br>");
+          else if (t.type === "image" && t.content) tile.innerHTML = `<img src="${t.content}">`;
+          else if (t.type === "clock") tile.innerHTML = `<div class="clock">88:88</div>`;
+          else if (t.type === "date") tile.innerHTML = new Date().toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric', year:'numeric'});
 
           container.appendChild(tile);
         });
 
-        // === 3. Live clock update (every second, no flicker) ===
-        function updateClocks() {
-          document.querySelectorAll(".clock").forEach(el => {
-            el.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-          });
-        }
-        updateClocks();
-        setInterval(updateClocks, 1000);
+        // Live clock update
+        document.querySelectorAll(".clock").forEach(el => {
+          el.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        });
 
-      } catch (e) {
-        console.error(e);
-        document.getElementById("tilesContainer").innerHTML = 
-          `<div style="color:red;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:32px">Error: ${e.message}</div>`;
-      }
+      } catch (e) { console.error(e); }
     }
 
     loadTiles();
-    setInterval(loadTiles, 8000);   // only foreground refreshes
+    setInterval(loadTiles, 8000);
+    setInterval(() => document.querySelectorAll(".clock").forEach(el => {
+      el.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    }), 1000);
   </script>
 </body>
 </html>
