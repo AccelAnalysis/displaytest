@@ -7,11 +7,15 @@
   <style>
     body,html{margin:0;height:100vh;overflow:hidden;background:#000;font-family:system-ui,sans-serif;color:white}
     #tilesContainer{position:relative;width:100%;height:100%}
-    .tile{position:absolute;box-sizing:border-box;overflow:hidden;user-select:none;transition:all .6s}
+    .tile{position:absolute;box-sizing:border-box;overflow:hidden;user-select:none;transition:all .6s ease-in-out}
     .tile img,.tile video,.tile iframe{width:100%;height:100%;object-fit:cover;display:block}
     .tile video{background:#000}
     .marquee { white-space: nowrap; animation: marquee 15s linear infinite; }
     @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+    
+    /* SLIDE TRANSITION STYLES */
+    .slide-hidden { opacity: 0 !important; visibility: hidden; }
+    .slide-active { opacity: 1 !important; visibility: visible; transition: opacity 1.5s; }
   </style>
   <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
@@ -20,336 +24,31 @@
   <div id="tilesContainer"></div>
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec";
+    const SLIDE_DURATION_MS = 10000; // 10 seconds per slide
+    const urlParams = new URLSearchParams(window.location.search);
+    const SCREEN_ID = urlParams.get('screenId') || 1; // Read screenId from URL, default to 1
 
-    async function loadTiles() {
+    let allTilesData = [];
+    let slideTimer = null;
+    let currentSlide = 1;
+    let maxSlide = 1;
+
+    async function fetchData() {
       try {
-        const res = await fetch(API_URL + "?t=" + Date.now());
+        // Pass screenId to Code.gs for filtering
+        const res = await fetch(API_URL + "?screenId=" + SCREEN_ID + "&t=" + Date.now());
         if (!res.ok) throw new Error("HTTP " + res.status);
-        const tiles = await res.json();
-
-        if (!Array.isArray(tiles) || tiles.length === 0) {
-          document.getElementById("tilesContainer").innerHTML = "<div style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;color:#f66'>No tiles returned</div>";
+        allTilesData = await res.json();
+        
+        if (allTilesData.length === 0) {
+          document.getElementById("tilesContainer").innerHTML = `<div style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;color:#f66'>No tiles found for Screen ${SCREEN_ID}</div>`;
           return;
         }
 
-        const container = document.getElementById("tilesContainer");
-        container.innerHTML = "";
-
-        tiles.forEach(t => {
-          if (t.visible === false || t.visible === "FALSE") return;
-
-          const tile = document.createElement("div");
-          tile.className = "tile";
-
-          // Common Styles
-          tile.style.left   = t.x || "0%";
-          tile.style.top    = t.y || "0%";
-          tile.style.width  = t.width || "30%";
-          tile.style.height = t.height || "20%";
-          tile.style.background = t.bgcolor || "rgba(0,0,0,0.6)";
-          tile.style.color = t.textcolor || "white";
-          tile.style.fontSize = t.fontsize || "24px";
-          tile.style.fontWeight = t.bold === "yes" ? "bold" : "normal";
-          tile.style.textAlign = t.align || "center";
-          tile.style.padding = t.padding || "20px";
-          tile.style.borderRadius = t.radius || "20px";
-          tile.style.boxShadow = t.shadow || "0 8px 32px rgba(0,0,0,0.6)";
-          tile.style.opacity = t.opacity ?? 1;
-          tile.style.transform = t.rotate ? `rotate(${t.rotate}deg)` : "";
-          tile.style.zIndex = t.zindex || "1";
-          tile.style.display = "flex";
-          tile.style.alignItems = "center";
-          tile.style.justifyContent = "center";
-          tile.style.textShadow = "0 2px 8px rgba(0,0,0,0.8)";
-          if(t.fontfamily) tile.style.fontFamily = t.fontfamily;
-
-          // --- TYPE LOGIC ---
-
-          if (t.type === "text" && t.content) {
-            tile.innerHTML = t.content.replace(/\\n/g, "<br>");
-          }
-          else if (t.type === "image" && t.content) {
-            tile.innerHTML = `<img src="${t.content}" alt="">`;
-          }
-          // UPDATED VIDEO LOGIC (REVERSE/ALTERNATE)
-          else if (t.type === "video" && t.content) {
-            if (t.content.match(/\.(mp4|webm|mov|ogg)/i)) {
-              const vid = document.createElement('video');
-              vid.src = t.content;
-              vid.muted = true;
-              vid.autoplay = true;
-              vid.playsInline = true;
-              vid.style.width = '100%';
-              vid.style.height = '100%';
-              vid.style.objectFit = 'cover';
-              
-              const mode = t.videomode || 'normal';
-              if (mode === 'normal') {
-                vid.loop = true;
-              } else {
-                vid.loop = false;
-                let interval;
-                const fps = 30;
-                const step = 1.0 / fps;
-                const playReverse = () => {
-                  vid.pause();
-                  clearInterval(interval);
-                  interval = setInterval(() => {
-                    vid.currentTime = Math.max(0, vid.currentTime - step);
-                    if (vid.currentTime <= 0) {
-                      clearInterval(interval);
-                      if (mode === 'alternate') vid.play();
-                      else { vid.currentTime = vid.duration; playReverse(); }
-                    }
-                  }, 1000 / fps);
-                };
-                if (mode === 'reverse') {
-                   vid.autoplay = false;
-                   vid.addEventListener('loadeddata', () => {
-                     vid.currentTime = vid.duration;
-                     playReverse();
-                   });
-                }
-                if (mode === 'alternate') {
-                  vid.onended = () => playReverse();
-                }
-              }
-              tile.appendChild(vid);
-            } else if (t.content.includes("vimeo")) {
-              const id = t.content.match(/vimeo.*\/(\d+)/)?.[1];
-              if (id) tile.innerHTML = `<iframe src="https://player.vimeo.com/video/${id}?autoplay=1&loop=1&muted=1&background=1" allow="autoplay; fullscreen" style="border:0;"></iframe>`;
-            }
-          }
-          else if (t.type === "clock") {
-            tile.innerHTML = `<div style="font-size:3em;font-weight:bold">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>`;
-            setInterval(() => {
-              tile.querySelector("div")?.replaceWith(tile.querySelector("div").cloneNode(true));
-              tile.querySelector("div").textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-            }, 1000);
-          }
-          else if (t.type === "shape") {
-            tile.innerHTML = "";
-          }
-          else if (t.type === "iframe" && t.content) {
-            tile.innerHTML = `<iframe src="${t.content}" style="width:100%;height:100%;border:0;"></iframe>`;
-          }
-          else if (t.type === "date") {
-            tile.innerHTML = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-          }
-          else if (t.type === "weather" && t.content) {
-            fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=3`).then(r => r.text()).then(txt => { tile.innerHTML = txt; }).catch(() => { tile.innerHTML = "Weather unavailable"; });
-          }
-          else if (t.type === "rss" && t.content) {
-            fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(t.content)}`).then(r => r.json()).then(feed => {
-              if (!feed.items) { tile.innerHTML = "RSS unavailable"; return; }
-              const headlines = feed.items.map(i => i.title).join(" • ");
-              tile.innerHTML = `<div class="rssTicker">${headlines}</div>`;
-              tile.querySelector(".rssTicker").style.whiteSpace = "nowrap";
-              tile.querySelector(".rssTicker").style.animation = "marquee 30s linear infinite";
-            }).catch(() => { tile.innerHTML = "RSS error"; });
-          }
-          else if (t.type === "quote") {
-            fetch("https://api.quotable.io/random").then(r => r.json()).then(q => { tile.innerHTML = `"${q.content}" — ${q.author}`; }).catch(() => { tile.innerHTML = "Quote unavailable"; });
-          }
-          else if (t.type === "countdown" && t.content) {
-            function updateCountdown() {
-              const end = new Date(t.content);
-              const diff = end - new Date();
-              if (diff <= 0) { tile.innerHTML = "Time's up!"; return; }
-              const d = Math.floor(diff / (1000*60*60*24));
-              const h = Math.floor((diff / (1000*60*60)) % 24);
-              const m = Math.floor((diff / (1000*60)) % 60);
-              const s = Math.floor((diff / 1000) % 60);
-              tile.innerHTML = `${d}d ${h}h ${m}m ${s}s`;
-            }
-            updateCountdown(); setInterval(updateCountdown, 1000);
-          }
-          else if (t.type === "youtube" && t.content) {
-            const id = t.content.match(/(?:v=|youtu\.be\/)([^&]+)/)?.[1];
-            if (id) tile.innerHTML = `<iframe src="https://www.youtube.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}&controls=0&modestbranding=1" style="width:100%;height:100%;border:0;" allow="autoplay"></iframe>`;
-          }
-          else if (t.type === "timer" && t.content) {
-            function updateTimer() {
-              const diff = new Date() - new Date(t.content);
-              const d = Math.floor(diff / (1000*60*60*24));
-              const h = Math.floor((diff / (1000*60*60)) % 24);
-              const m = Math.floor((diff / (1000*60)) % 60);
-              const s = Math.floor((diff / 1000) % 60);
-              tile.innerHTML = `${d}d ${h}h ${m}m ${s}s`;
-            }
-            updateTimer(); setInterval(updateTimer, 1000);
-          }
-          else if (t.type === "weather_detailed" && t.content) {
-            fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`).then(r => r.json()).then(w => {
-              const now = w.current_condition[0];
-              tile.innerHTML = `${now.temp_F}°F<br>${now.weatherDesc[0].value}<br>Wind ${now.windspeedMiles} mph<br>Humidity ${now.humidity}%`;
-            }).catch(() => tile.innerHTML = "Weather unavailable");
-          }
-          else if (t.type === "stock" && t.content) {
-            // Note: Demo key used in original code
-            fetch(`https://api.finage.co.uk/last/stock/${t.content}?apikey=demo`).then(r => r.json()).then(s => { tile.innerHTML = `${t.content}: $${s.price}`; }).catch(() => tile.innerHTML = "Stock error");
-          }
-          else if (t.type === "crypto" && t.content) {
-            fetch(`https://api.coinbase.com/v2/prices/${t.content}-USD/spot`).then(r => r.json()).then(s => tile.innerHTML = `${t.content}: $${s.data.amount}`).catch(() => tile.innerHTML = "Crypto unavailable");
-          }
-          else if (t.type === "audio" && t.content) {
-            tile.innerHTML = `<audio autoplay loop style="width:100%;"><source src="${t.content}"></audio>`;
-          }
-          else if (t.type === "qrcode" && t.content) {
-            tile.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(t.content)}">`;
-          }
-          else if (t.type === "map" && t.content) {
-            tile.innerHTML = `<iframe width="100%" height="100%" style="border:0;" src="https://www.google.com/maps?q=$?q=${encodeURIComponent(t.content)}&output=embed"></iframe>`;
-          }
-          else if (t.type === "marquee" && t.content) {
-            tile.innerHTML = `<div class="marquee">${t.content}</div>`;
-          }
-          else if (t.type === "gradient" && t.content) {
-            const [c1,c2] = t.content.split(",");
-            tile.style.background = `linear-gradient(135deg, ${c1}, ${c2})`;
-          }
-          else if (t.type === "sheetcell" && t.content) {
-            const [url, cell] = t.content.split("#");
-            fetch(url).then(r => r.text()).then(csv => {
-              const rows = csv.split("\n").map(r => r.split(","));
-              const col = cell.match(/[A-Za-z]+/)[0].toUpperCase();
-              const row = parseInt(cell.match(/\d+/)[0], 10);
-              const colIndex = col.charCodeAt(0) - 65;
-              tile.innerHTML = rows[row - 1]?.[colIndex] ?? "N/A";
-            }).catch(() => tile.innerHTML = "Cell error");
-          }
-          else if (t.type === "flipboard" && t.content) {
-            tile.style.fontSize = "3em"; tile.style.fontFamily = "monospace"; tile.innerHTML = t.content;
-          }
-          else if (t.type === "progress" && t.content) {
-            const pct = parseFloat(t.content) || 0;
-            tile.innerHTML = `<div style="width:90%;height:25%;background:#333;border-radius:20px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#4caf50;border-radius:20px"></div></div><div style="margin-top:10px;font-size:1.2em">${pct}%</div>`;
-          }
-          else if (t.type === "emojiWeather" && t.content) {
-            fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`).then(r => r.json()).then(w => {
-              const cond = w.current_condition[0].weatherDesc[0].value.toLowerCase();
-              let emoji = "☀️";
-              if (cond.includes("rain")) emoji = "🌧️"; else if (cond.includes("snow")) emoji = "❄️"; else if (cond.includes("cloud")) emoji = "☁️"; else if (cond.includes("storm")) emoji = "⛈️";
-              tile.innerHTML = `${emoji}<br>${t.content}`;
-            }).catch(()=> tile.innerHTML = "Weather error");
-          }
-          else if (t.type === "html" && t.content) {
-            tile.innerHTML = t.content;
-          }
-          else if (t.type === "lottie" && t.content) {
-            tile.innerHTML = `<lottie-player src="${t.content}" background="transparent" speed="1" loop autoplay></lottie-player>`;
-          }
-          else if (t.type === "icon" && t.content) {
-            tile.innerHTML = `<div style="font-size:4em">${t.content}</div>`;
-          }
-          else if (t.type === "avatar" && t.content) {
-            tile.innerHTML = `<img src="${t.content}" style="width:80%;height:80%;border-radius:50%;object-fit:cover;">`;
-          }
-          else if (t.type === "bar" && t.content) {
-            const nums = t.content.split(",").map(n=>parseFloat(n));
-            const max = Math.max(...nums);
-            tile.style.flexDirection = "row"; tile.style.alignItems = "flex-end";
-            nums.forEach(n=>{
-              const bar = document.createElement("div");
-              bar.style.width = `${100/nums.length}%`; bar.style.height = `${(n/max)*80}%`;
-              bar.style.background = "#4caf50"; bar.style.margin = "0 2px";
-              tile.appendChild(bar);
-            });
-          }
-          else if (t.type === "pie" && t.content) {
-            const nums = t.content.split(",").map(Number);
-            const total = nums.reduce((a,b)=>a+b,0);
-            let offset = 0;
-            tile.style.borderRadius = "50%";
-            tile.style.background = `conic-gradient(${nums.map((n,i)=> {
-              const pct = (n/total)*360; const start = offset; offset += pct;
-              return `${["#4caf50","#2196f3","#ff9800","#e91e63","#9c27b0"][i%5]} ${start}deg ${offset}deg`;
-            }).join(",")})`;
-          }
-          else if (t.type === "list" && t.content) {
-            const items = t.content.split("\\n").map(i=>`<li>${i}</li>`).join("");
-            tile.innerHTML = `<ul style="text-align:left;padding-left:20px">${items}</ul>`;
-          }
-          else if (t.type === "table" && t.content) {
-            const rows = t.content.split("\\n").map(r=>r.split(","));
-            tile.innerHTML = `<table style="width:100%;border-collapse:collapse;text-align:center">${rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #666;padding:4px">${c}</td>`).join("")}</tr>`).join("")}</table>`;
-          }
-          else if (t.type === "status" && t.content) {
-            const v = t.content.toLowerCase();
-            let color = "#0f0";
-            if (v.includes("warn")) color = "#ff0"; else if (v.includes("alert") || v.includes("error")) color = "#f00";
-            tile.style.background = color; tile.innerHTML = t.content.toUpperCase();
-          }
-          else if (t.type === "mic") {
-             tile.innerHTML = `<div style="width:100%;display:flex;align-items:flex-end;gap:4px;"></div>`;
-             const bars = Array.from({length:20}).map(()=>{
-               const b=document.createElement("div");
-               b.style.width="4%";b.style.height="20%";b.style.background="#4caf50";
-               tile.firstChild.appendChild(b); return b;
-             });
-             navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
-               const ctx = new AudioContext(); const src = ctx.createMediaStreamSource(stream);
-               const analyser = ctx.createAnalyser(); analyser.fftSize = 64; src.connect(analyser);
-               const data = new Uint8Array(analyser.frequencyBinCount);
-               setInterval(()=>{ analyser.getByteFrequencyData(data); bars.forEach((b,i)=> b.style.height = `${(data[i]/255)*100}%`); },100);
-             }).catch(e=>console.log("Mic error",e));
-          }
-          else if (t.type === "particles") {
-             const c=document.createElement("canvas"); tile.appendChild(c);
-             const ctx=c.getContext("2d");
-             const resize=()=>{c.width=tile.clientWidth;c.height=tile.clientHeight;}; resize();
-             const parts=Array.from({length:40},()=>({x:Math.random()*c.width,y:Math.random()*c.height,vx:(Math.random()-.5),vy:(Math.random()-.5)}));
-             const anim=()=>{
-               ctx.clearRect(0,0,c.width,c.height);
-               parts.forEach(p=>{
-                 p.x+=p.vx; p.y+=p.vy;
-                 if(p.x<0||p.x>c.width)p.vx*=-1; if(p.y<0||p.y>c.height)p.vy*=-1;
-                 ctx.fillStyle="white"; ctx.fillRect(p.x,p.y,3,3);
-               });
-               requestAnimationFrame(anim);
-             };
-             anim();
-          }
-          else if (t.type === "3dmodel" && t.content) {
-            tile.innerHTML = `<model-viewer src="${t.content}" auto-rotate camera-controls style="width:100%;height:100%"></model-viewer>`;
-          }
-          else if (t.type === "scene" && t.content) {
-             const imgs = t.content.split(","); let idx = 0;
-             tile.innerHTML = `<img src="${imgs[0]}" style="width:100%;height:100%;object-fit:cover;">`;
-             setInterval(()=>{ idx = (idx+1)%imgs.length; tile.querySelector("img").src = imgs[idx]; }, 5000);
-          }
-          else if (t.type === "weather_icon" && t.content) {
-             fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`).then(r=>r.json()).then(w=>{
-               const cond = w.current_condition[0].weatherDesc[0].value.toLowerCase();
-               let icon = "☀️";
-               if (cond.includes("rain")) icon="🌧️"; if (cond.includes("snow")) icon="❄️"; if (cond.includes("storm")) icon="⛈️"; if (cond.includes("cloud")) icon="☁️";
-               tile.innerHTML = `<div style="font-size:3em">${icon}</div><br>${t.content}`;
-             }).catch(()=> tile.innerHTML="Weather error");
-          }
-          else if (t.type === "openai" && t.content) {
-             tile.innerHTML = "Loading AI...";
-             // Placeholder prompt logic from original
-             fetch("YOUR_PROXY?prompt="+encodeURIComponent(t.content)).then(r=>r.text()).then(txt=>tile.innerHTML=txt).catch(()=>tile.innerHTML="AI error");
-          }
-          else if (t.type === "random_image" && t.content) {
-             tile.innerHTML = `<img src="https://source.unsplash.com/800x800/?${encodeURIComponent(t.content)}">`;
-          }
-          else if (t.type === "gif" && t.content) {
-             tile.innerHTML = `<img src="${t.content}" style="width:100%;height:100%;object-fit:cover;">`;
-          }
-          else if (t.type === "menu" && t.content) {
-             const items = t.content.split("\\n");
-             tile.style.flexDirection = "column";
-             tile.innerHTML = items.map(i => `<button style="margin:5px;padding:10px;border-radius:8px;background:#444;color:white;font-size:1.1em">${i}</button>`).join("");
-          }
-          else if (t.type === "carousel" && t.content) {
-             const list = t.content.split(","); let i = 0;
-             tile.innerHTML = `<img src="${list[0]}" style="width:100%;height:100%;object-fit:cover;">`;
-             setInterval(()=>{ i=(i+1)%list.length; tile.querySelector("img").src=list[i]; },4000);
-          }
-
-          container.appendChild(tile);
-        });
+        maxSlide = allTilesData.reduce((max, t) => Math.max(max, t.slideId || 1), 1);
+        
+        renderTiles();
+        startSlideShow();
 
       } catch (e) {
         console.error(e);
@@ -357,8 +56,368 @@
       }
     }
 
-    loadTiles();
-    setInterval(loadTiles, 45000);
+    function renderTiles() {
+      const container = document.getElementById("tilesContainer");
+      container.innerHTML = "";
+      
+      allTilesData.forEach(t => {
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.setAttribute('data-slide-id', t.slideId || 1);
+
+        // Common Styles
+        tile.style.left   = t.x || "0%";
+        tile.style.top    = t.y || "0%";
+        tile.style.width  = t.width || "30%";
+        tile.style.height = t.height || "20%";
+        tile.style.background = t.bgcolor || "rgba(0,0,0,0.6)";
+        tile.style.color = t.textcolor || "white";
+        tile.style.fontSize = t.fontsize || "24px";
+        tile.style.fontWeight = t.bold === "yes" ? "bold" : "normal";
+        tile.style.textAlign = t.align || "center";
+        tile.style.padding = t.padding || "20px";
+        tile.style.borderRadius = t.radius || "20px";
+        tile.style.boxShadow = t.shadow || "0 8px 32px rgba(0,0,0,0.6)";
+        tile.style.opacity = t.opacity ?? 1;
+        tile.style.transform = t.rotate ? `rotate(${t.rotate}deg)` : "";
+        tile.style.zIndex = t.zindex || "1";
+        tile.style.display = "flex";
+        tile.style.alignItems = "center";
+        tile.style.justifyContent = "center";
+        tile.style.textShadow = "0 2px 8px rgba(0,0,0,0.8)";
+        if(t.fontfamily) tile.style.fontFamily = t.fontfamily;
+
+        // Initially hide tiles that are not on the first slide
+        if (t.slideId > 1) {
+            tile.classList.add('slide-hidden');
+        } else {
+            tile.classList.add('slide-active');
+        }
+
+        // --- TYPE LOGIC (UNCHANGED) ---
+        if (t.type === "text" && t.content) {
+          tile.innerHTML = t.content.replace(/\\n/g, "<br>");
+        }
+        else if (t.type === "image" && t.content) {
+          tile.innerHTML = `<img src="${t.content}" alt="">`;
+        }
+        else if (t.type === "video" && t.content) {
+          if (t.content.match(/\.(mp4|webm|mov|ogg)/i)) {
+            const vid = document.createElement('video');
+            vid.src = t.content;
+            vid.muted = true;
+            vid.autoplay = true;
+            vid.playsInline = true;
+            vid.style.width = '100%';
+            vid.style.height = '100%';
+            vid.style.objectFit = 'cover';
+            
+            const mode = t.videomode || 'normal';
+            if (mode === 'normal') {
+              vid.loop = true;
+            } else {
+              vid.loop = false;
+              let interval;
+              const fps = 30;
+              const step = 1.0 / fps;
+              const playReverse = () => {
+                vid.pause();
+                clearInterval(interval);
+                interval = setInterval(() => {
+                  vid.currentTime = Math.max(0, vid.currentTime - step);
+                  if (vid.currentTime <= 0) {
+                    clearInterval(interval);
+                    if (mode === 'alternate') vid.play();
+                    else { vid.currentTime = vid.duration; playReverse(); }
+                  }
+                }, 1000 / fps);
+              };
+              if (mode === 'reverse') {
+                 vid.autoplay = false;
+                 vid.addEventListener('loadeddata', () => {
+                   vid.currentTime = vid.duration;
+                   playReverse();
+                 });
+              }
+              if (mode === 'alternate') {
+                vid.onended = () => playReverse();
+              }
+            }
+            tile.appendChild(vid);
+          } else if (t.content.includes("vimeo")) {
+            const id = t.content.match(/vimeo.*\/(\d+)/)?.[1];
+            if (id) tile.innerHTML = `<iframe src="https://player.vimeo.com/video/${id}?autoplay=1&loop=1&muted=1&background=1" allow="autoplay; fullscreen" style="border:0;"></iframe>`;
+          }
+        }
+        else if (t.type === "clock") {
+          tile.innerHTML = `<div style="font-size:3em;font-weight:bold">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>`;
+          setInterval(() => {
+            tile.querySelector("div")?.replaceWith(tile.querySelector("div").cloneNode(true));
+            tile.querySelector("div").textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+          }, 1000);
+        }
+        else if (t.type === "shape") {
+          tile.innerHTML = "";
+        }
+        else if (t.type === "iframe" && t.content) {
+          tile.innerHTML = `<iframe src="${t.content}" style="width:100%;height:100%;border:0;"></iframe>`;
+        }
+        else if (t.type === "date") {
+          tile.innerHTML = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+        }
+        else if (t.type === "weather" && t.content) {
+          fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=3`).then(r => r.text()).then(txt => { tile.innerHTML = txt; }).catch(() => { tile.innerHTML = "Weather unavailable"; });
+        }
+        else if (t.type === "rss" && t.content) {
+          fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(t.content)}`).then(r => r.json()).then(feed => {
+            if (!feed.items) { tile.innerHTML = "RSS unavailable"; return; }
+            const headlines = feed.items.map(i => i.title).join(" • ");
+            tile.innerHTML = `<div class="rssTicker">${headlines}</div>`;
+            tile.querySelector(".rssTicker").style.whiteSpace = "nowrap";
+            tile.querySelector(".rssTicker").style.animation = "marquee 30s linear infinite";
+          }).catch(() => { tile.innerHTML = "RSS error"; });
+        }
+        else if (t.type === "quote") {
+          fetch("https://api.quotable.io/random").then(r => r.json()).then(q => { tile.innerHTML = `"${q.content}" — ${q.author}`; }).catch(() => { tile.innerHTML = "Quote unavailable"; });
+        }
+        else if (t.type === "countdown" && t.content) {
+          function updateCountdown() {
+            const end = new Date(t.content);
+            const diff = end - new Date();
+            if (diff <= 0) { tile.innerHTML = "Time's up!"; return; }
+            const d = Math.floor(diff / (1000*60*60*24));
+            const h = Math.floor((diff / (1000*60*60)) % 24);
+            const m = Math.floor((diff / (1000*60)) % 60);
+            const s = Math.floor((diff / 1000) % 60);
+            tile.innerHTML = `${d}d ${h}h ${m}m ${s}s`;
+          }
+          updateCountdown(); setInterval(updateCountdown, 1000);
+        }
+        else if (t.type === "youtube" && t.content) {
+          const id = t.content.match(/(?:v=|youtu\.be\/)([^&]+)/)?.[1];
+          if (id) tile.innerHTML = `<iframe src="https://www.youtube.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}&controls=0&modestbranding=1" style="width:100%;height:100%;border:0;" allow="autoplay"></iframe>`;
+        }
+        else if (t.type === "timer" && t.content) {
+          function updateTimer() {
+            const diff = new Date() - new Date(t.content);
+            const d = Math.floor(diff / (1000*60*60*24));
+            const h = Math.floor((diff / (1000*60*60)) % 24);
+            const m = Math.floor((diff / (1000*60)) % 60);
+            const s = Math.floor((diff / 1000) % 60);
+            tile.innerHTML = `${d}d ${h}h ${m}m ${s}s`;
+          }
+          updateTimer(); setInterval(updateTimer, 1000);
+        }
+        else if (t.type === "weather_detailed" && t.content) {
+          fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`).then(r => r.json()).then(w => {
+            const now = w.current_condition[0];
+            tile.innerHTML = `${now.temp_F}°F<br>${now.weatherDesc[0].value}<br>Wind ${now.windspeedMiles} mph<br>Humidity ${now.humidity}%`;
+          }).catch(() => tile.innerHTML = "Weather unavailable");
+        }
+        else if (t.type === "stock" && t.content) {
+          fetch(`https://api.finage.co.uk/last/stock/${t.content}?apikey=demo`).then(r => r.json()).then(s => { tile.innerHTML = `${t.content}: $${s.price}`; }).catch(() => tile.innerHTML = "Stock error");
+        }
+        else if (t.type === "crypto" && t.content) {
+          fetch(`https://api.coinbase.com/v2/prices/${t.content}-USD/spot`).then(r => r.json()).then(s => tile.innerHTML = `${t.content}: $${s.data.amount}`).catch(() => tile.innerHTML = "Crypto unavailable");
+        }
+        else if (t.type === "audio" && t.content) {
+          tile.innerHTML = `<audio autoplay loop style="width:100%;"><source src="${t.content}"></audio>`;
+        }
+        else if (t.type === "qrcode" && t.content) {
+          tile.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(t.content)}">`;
+        }
+        else if (t.type === "map" && t.content) {
+          tile.innerHTML = `<iframe width="100%" height="100%" style="border:0;" src="https://www.google.com/maps?q=$?q=${encodeURIComponent(t.content)}&output=embed"></iframe>`;
+        }
+        else if (t.type === "marquee" && t.content) {
+          tile.innerHTML = `<div class="marquee">${t.content}</div>`;
+        }
+        else if (t.type === "gradient" && t.content) {
+          const [c1,c2] = t.content.split(",");
+          tile.style.background = `linear-gradient(135deg, ${c1}, ${c2})`;
+        }
+        else if (t.type === "sheetcell" && t.content) {
+          const [url, cell] = t.content.split("#");
+          fetch(url).then(r => r.text()).then(csv => {
+            const rows = csv.split("\n").map(r => r.split(","));
+            const col = cell.match(/[A-Za-z]+/)[0].toUpperCase();
+            const row = parseInt(cell.match(/\d+/)[0], 10);
+            const colIndex = col.charCodeAt(0) - 65;
+            tile.innerHTML = rows[row - 1]?.[colIndex] ?? "N/A";
+          }).catch(() => tile.innerHTML = "Cell error");
+        }
+        else if (t.type === "flipboard" && t.content) {
+          tile.style.fontSize = "3em"; tile.style.fontFamily = "monospace"; tile.innerHTML = t.content;
+        }
+        else if (t.type === "progress" && t.content) {
+          const pct = parseFloat(t.content) || 0;
+          tile.innerHTML = `<div style="width:90%;height:25%;background:#333;border-radius:20px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#4caf50;border-radius:20px"></div></div><div style="margin-top:10px;font-size:1.2em">${pct}%</div>`;
+        }
+        else if (t.type === "emojiWeather" && t.content) {
+          fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`).then(r => r.json()).then(w => {
+            const cond = w.current_condition[0].weatherDesc[0].value.toLowerCase();
+            let emoji = "☀️";
+            if (cond.includes("rain")) emoji = "🌧️"; else if (cond.includes("snow")) emoji = "❄️"; else if (cond.includes("cloud")) emoji = "☁️"; else if (cond.includes("storm")) emoji = "⛈️";
+            tile.innerHTML = `${emoji}<br>${t.content}`;
+          }).catch(()=> tile.innerHTML = "Weather error");
+        }
+        else if (t.type === "html" && t.content) {
+          tile.innerHTML = t.content;
+        }
+        else if (t.type === "lottie" && t.content) {
+          tile.innerHTML = `<lottie-player src="${t.content}" background="transparent" speed="1" loop autoplay></lottie-player>`;
+        }
+        else if (t.type === "icon" && t.content) {
+          tile.innerHTML = `<div style="font-size:4em">${t.content}</div>`;
+        }
+        else if (t.type === "avatar" && t.content) {
+          tile.innerHTML = `<img src="${t.content}" style="width:80%;height:80%;border-radius:50%;object-fit:cover;">`;
+        }
+        else if (t.type === "bar" && t.content) {
+          const nums = t.content.split(",").map(n=>parseFloat(n));
+          const max = Math.max(...nums);
+          tile.style.flexDirection = "row"; tile.style.alignItems = "flex-end";
+          nums.forEach(n=>{
+            const bar = document.createElement("div");
+            bar.style.width = `${100/nums.length}%`; bar.style.height = `${(n/max)*80}%`;
+            bar.style.background = "#4caf50"; bar.style.margin = "0 2px";
+            tile.appendChild(bar);
+          });
+        }
+        else if (t.type === "pie" && t.content) {
+          const nums = t.content.split(",").map(Number);
+          const total = nums.reduce((a,b)=>a+b,0);
+          let offset = 0;
+          tile.style.borderRadius = "50%";
+          tile.style.background = `conic-gradient(${nums.map((n,i)=> {
+            const pct = (n/total)*360; const start = offset; offset += pct;
+            return `${["#4caf50","#2196f3","#ff9800","#e91e63","#9c27b0"][i%5]} ${start}deg ${offset}deg`;
+          }).join(",")})`;
+        }
+        else if (t.type === "list" && t.content) {
+          const items = t.content.split("\\n").map(i=>`<li>${i}</li>`).join("");
+          tile.innerHTML = `<ul style="text-align:left;padding-left:20px">${items}</ul>`;
+        }
+        else if (t.type === "table" && t.content) {
+          const rows = t.content.split("\\n").map(r=>r.split(","));
+          tile.innerHTML = `<table style="width:100%;border-collapse:collapse;text-align:center">${rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #666;padding:4px">${c}</td>`).join("")}</tr>`).join("")}</table>`;
+        }
+        else if (t.type === "status" && t.content) {
+          const v = t.content.toLowerCase();
+          let color = "#0f0";
+          if (v.includes("warn")) color = "#ff0"; else if (v.includes("alert") || v.includes("error")) color = "#f00";
+          tile.style.background = color; tile.innerHTML = t.content.toUpperCase();
+        }
+        else if (t.type === "mic") {
+           tile.innerHTML = `<div style="width:100%;display:flex;align-items:flex-end;gap:4px;"></div>`;
+           const bars = Array.from({length:20}).map(()=>{
+             const b=document.createElement("div");
+             b.style.width="4%";b.style.height="20%";b.style.background="#4caf50";
+             tile.firstChild.appendChild(b); return b;
+           });
+           // NOTE: MIC/AUDIO VISUALIZERS MAY REQUIRE HTTPS/USER INTERACTION
+        }
+        else if (t.type === "particles") {
+           const c=document.createElement("canvas"); tile.appendChild(c);
+           const ctx=c.getContext("2d");
+           const resize=()=>{c.width=tile.clientWidth;c.height=tile.clientHeight;}; resize();
+           const parts=Array.from({length:40},()=>({x:Math.random()*c.width,y:Math.random()*c.height,vx:(Math.random()-.5),vy:(Math.random()-.5)}));
+           const anim=()=>{
+             ctx.clearRect(0,0,c.width,c.height);
+             parts.forEach(p=>{
+               p.x+=p.vx; p.y+=p.vy;
+               if(p.x<0||p.x>c.width)p.vx*=-1; if(p.y<0||p.y>c.height)p.vy*=-1;
+               ctx.fillStyle="white"; ctx.fillRect(p.x,p.y,3,3);
+             });
+             requestAnimationFrame(anim);
+           };
+           anim();
+        }
+        else if (t.type === "3dmodel" && t.content) {
+          tile.innerHTML = `<model-viewer src="${t.content}" auto-rotate camera-controls style="width:100%;height:100%"></model-viewer>`;
+        }
+        else if (t.type === "scene" && t.content) {
+           const imgs = t.content.split(","); let idx = 0;
+           tile.innerHTML = `<img src="${imgs[0]}" style="width:100%;height:100%;object-fit:cover;">`;
+           setInterval(()=>{ idx = (idx+1)%imgs.length; tile.querySelector("img").src = imgs[idx]; }, 5000);
+        }
+        else if (t.type === "weather_icon" && t.content) {
+           fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`).then(r=>r.json()).then(w=>{
+             const cond = w.current_condition[0].weatherDesc[0].value.toLowerCase();
+             let icon = "☀️";
+             if (cond.includes("rain")) icon="🌧️"; if (cond.includes("snow")) icon="❄️"; if (cond.includes("storm")) icon="⛈️"; if (cond.includes("cloud")) icon="☁️";
+             tile.innerHTML = `<div style="font-size:3em">${icon}</div><br>${t.content}`;
+           }).catch(()=> tile.innerHTML="Weather error");
+        }
+        else if (t.type === "openai" && t.content) {
+           tile.innerHTML = "Loading AI...";
+           fetch("YOUR_PROXY?prompt="+encodeURIComponent(t.content)).then(r=>r.text()).then(txt=>tile.innerHTML=txt).catch(()=>tile.innerHTML="AI error");
+        }
+        else if (t.type === "random_image" && t.content) {
+           tile.innerHTML = `<img src="https://source.unsplash.com/800x800/?${encodeURIComponent(t.content)}">`;
+        }
+        else if (t.type === "gif" && t.content) {
+           tile.innerHTML = `<img src="${t.content}" style="width:100%;height:100%;object-fit:cover;">`;
+        }
+        else if (t.type === "menu" && t.content) {
+           const items = t.content.split("\\n");
+           tile.style.flexDirection = "column";
+           tile.innerHTML = items.map(i => `<button style="margin:5px;padding:10px;border-radius:8px;background:#444;color:white;font-size:1.1em">${i}</button>`).join("");
+        }
+        else if (t.type === "carousel" && t.content) {
+           const list = t.content.split(","); let i = 0;
+           tile.innerHTML = `<img src="${list[0]}" style="width:100%;height:100%;object-fit:cover;">`;
+           setInterval(()=>{ i=(i+1)%list.length; tile.querySelector("img").src=list[i]; },4000);
+        }
+
+        container.appendChild(tile);
+      });
+    }
+    
+    // --- SLIDESHOW LOGIC ---
+    function showSlide(id) {
+        const tiles = document.querySelectorAll('.tile');
+        tiles.forEach(tile => {
+            const slideId = parseInt(tile.getAttribute('data-slide-id'));
+            if (slideId === id) {
+                // Show the tile (Fade in)
+                tile.classList.remove('slide-hidden');
+                tile.classList.add('slide-active');
+            } else {
+                // Hide the tile (Fade out)
+                tile.classList.remove('slide-active');
+                tile.classList.add('slide-hidden');
+            }
+        });
+    }
+
+    function advanceSlide() {
+        currentSlide++;
+        if (currentSlide > maxSlide) {
+            currentSlide = 1; // Loop back to the first slide
+            // When looping, refetch data to catch updates from the Admin panel
+            fetchData(); 
+        } else {
+            showSlide(currentSlide);
+        }
+    }
+
+    function startSlideShow() {
+        if (slideTimer) clearInterval(slideTimer);
+        
+        // Only start the timer if there's more than one slide to show
+        if (maxSlide > 1) {
+            slideTimer = setInterval(advanceSlide, SLIDE_DURATION_MS);
+            console.log(`Slideshow started for Screen ${SCREEN_ID}. Rotating ${maxSlide} slides every ${SLIDE_DURATION_MS / 1000}s.`);
+        } else {
+             console.log(`Only one slide for Screen ${SCREEN_ID}. Slideshow disabled.`);
+        }
+    }
+    
+    // Start the whole process
+    fetchData();
+    // Re-fetch everything periodically to check for new tiles/changes
+    setInterval(fetchData, 60000); 
   </script>
 </body>
 </html>
