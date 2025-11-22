@@ -1,39 +1,35 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Remote Display</title>
   <style>
-    body { margin:0; height:100vh; font-family:system-ui,sans-serif; color:white;
-      background:#000; background-image:url("./background.jpg"); background-size:cover; background-position:center; }
-    .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:0; }
-    .content { position:relative; z-index:1; padding:6vh 6vw; text-shadow:0 2px 8px rgba(0,0,0,0.8); }
+    body{margin:0;height:100vh;font-family:system-ui,sans-serif;color:white;background:#000;
+         background-image:url("./background.jpg");background-size:cover;background-position:center}
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:0}
+    .content{position:relative;z-index:1;padding:6vh 6vw;text-shadow:0 2px 8px rgba(0,0,0,0.8)}
   </style>
 </head>
 <body id="pageBody">
 
   <!-- Direct <video> background -->
   <video id="bgVideo" autoplay muted loop playsinline
-         style="position:fixed; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:-2; display:none;"></video>
+         style="position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:-2;display:none"></video>
 
-  <!-- Vimeo container – now with allow="autoplay" on the div itself -->
+  <!-- Vimeo container – allow autoplay on the DIV (critical for Safari & FireTV) -->
   <div id="vimeoContainer" allow="autoplay; fullscreen; picture-in-picture"
-       style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:-2; display:none; overflow:hidden;">
-    <iframe id="vimeoPlayer"
-            src="" 
-            frameborder="0"
+       style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:-2;display:none;overflow:hidden">
+    <iframe id="vimeoPlayer" frameborder="0" allowfullscreen
             allow="autoplay; fullscreen; picture-in-picture"
-            allowfullscreen
-            style="position:absolute; top:0; left:0; width:100%; height:100%; border:0;">
-    </iframe>
+            style="position:absolute;top:0;left:0;width:100%;height:100%;border:0"></iframe>
   </div>
 
   <div class="overlay"></div>
   <div class="content">
-    <div id="headline" style="font-size:48px; font-weight:700;"></div>
-    <div id="subhead" style="font-size:28px; margin-top:10px;"></div>
-    <div id="status" style="font-size:24px; margin-top:18px; color:crimson;"></div>
+    <div id="headline" style="font-size:48px;font-weight:700"></div>
+    <div id="subhead" style="font-size:28px;margin-top:10px"></div>
+    <div id="status" style="font-size:24px;margin-top:18px;color:crimson"></div>
   </div>
 
   <script>
@@ -41,7 +37,7 @@
 
     async function refreshDisplay() {
       try {
-        const res = await fetch(API_URL, { cache: "no-store" });
+        const res = await fetch(API_URL, {cache:"no-store"});
         const data = await res.json();
 
         document.getElementById("headline").textContent = data.headline || "";
@@ -53,8 +49,8 @@
         const vimeoContain = document.getElementById("vimeoContainer");
         const vimeoPlayer  = document.getElementById("vimeoPlayer");
 
-        // 1. Direct video file
-        if (data.videoUrl && typeof data.videoUrl === "string" && data.videoUrl.match(/\.(mp4|webm|ogg|m4v|mov)($|\?)/i)) {
+        // 1. Direct video files
+        if (data.videoUrl && typeof data.videoUrl==="string" && data.videoUrl.match(/\.(mp4|webm|ogg|m4v|mov)($|\?)/i)) {
           body.style.backgroundImage = "none";
           vimeoContain.style.display = "none";
           bgVideo.src = data.videoUrl;
@@ -62,22 +58,31 @@
           return;
         }
 
-        // 2. Vimeo – now accepts ANY vimeo.com link (not just /video/)
+        // 2. Vimeo – any vimeo.com link
         let vimeoId = null;
-        if (data.videoUrl && typeof data.videoUrl === "string" && data.videoUrl.includes("vimeo.com")) {
-          const match = data.videoUrl.match(/vimeo\.com\/(?:video\/)?(\d+)/);
-          if (match) vimeoId = match[1];
+        if (data.videoUrl && data.videoUrl.includes("vimeo.com")) {
+          const m = data.videoUrl.match(/vimeo.*\/(\d+)/);
+          if (m) vimeoId = m[1];
         }
 
         if (vimeoId) {
           body.style.backgroundImage = "none";
           bgVideo.style.display = "none";
-          vimeoPlayer.src = `https://player.vimeo.com/video/${vimeoId}?autoplay=1&loop=1&muted=1&background=1&title=0&byline=0&portrait=0&transparent=0`;
-          vimeoContain.style.display = "block";
+
+          const newSrc = `https://player.vimeo.com/video/${vimeoId}?autoplay=1&loop=1&muted=1&background=1&title=0&byline=0&portrait=0`;
+
+          // This tiny trick forces autoplay even on Safari
+          if (vimeoPlayer.src !== newSrc) {
+            vimeoPlayer.src = "";                // clear first
+            vimeoContain.style.display = "block";
+            setTimeout(() => { vimeoPlayer.src = newSrc; }, 50);
+          } else {
+            vimeoContain.style.display = "block";
+          }
           return;
         }
 
-        // 3. Fallback to static image
+        // 3. Fallback static background
         bgVideo.style.display = "none";
         vimeoContain.style.display = "none";
         vimeoPlayer.src = "";
@@ -85,9 +90,7 @@
         body.style.backgroundSize = "cover";
         body.style.backgroundPosition = "center";
 
-      } catch (err) {
-        console.error("Refresh failed", err);
-      }
+      } catch(e) { console.error(e); }
     }
 
     refreshDisplay();
