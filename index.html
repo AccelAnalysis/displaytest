@@ -245,6 +245,313 @@ else if (t.type === "gradient" && t.content) {
   const [c1,c2] = t.content.split(",");
   tile.style.background = `linear-gradient(135deg, ${c1}, ${c2})`;
 }
+/***********************
+ * 24. sheetcell
+ ***********************/
+else if (t.type === "sheetcell" && t.content) {
+  const [url, cell] = t.content.split("#");
+  fetch(url)
+    .then(r => r.text())
+    .then(csv => {
+      const rows = csv.split("\n").map(r => r.split(","));
+      const col = cell.match(/[A-Za-z]+/)[0].toUpperCase();
+      const row = parseInt(cell.match(/\d+/)[0], 10);
+      const colIndex = col.charCodeAt(0) - 65;
+      tile.innerHTML = rows[row - 1]?.[colIndex] ?? "N/A";
+    })
+    .catch(() => tile.innerHTML = "Cell error");
+}
+
+/***********************
+ * 25. flipboard
+ ***********************/
+else if (t.type === "flipboard" && t.content) {
+  tile.style.fontSize = "3em";
+  tile.style.letterSpacing = "0.1em";
+  tile.style.fontFamily = "monospace";
+  tile.innerHTML = t.content;
+}
+
+/***********************
+ * 26. progress
+ ***********************/
+else if (t.type === "progress" && t.content) {
+  const pct = parseFloat(t.content) || 0;
+  tile.innerHTML = `
+    <div style="width:90%;height:25%;background:#333;border-radius:20px;overflow:hidden">
+      <div style="height:100%;width:${pct}%;background:#4caf50;border-radius:20px"></div>
+    </div>
+    <div style="margin-top:10px;font-size:1.2em">${pct}%</div>
+  `;
+}
+
+/***********************
+ * 27. emojiWeather
+ ***********************/
+else if (t.type === "emojiWeather" && t.content) {
+  fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`)
+    .then(r => r.json())
+    .then(w => {
+      const cond = w.current_condition[0].weatherDesc[0].value.toLowerCase();
+      let emoji = "☀️";
+      if (cond.includes("rain")) emoji = "🌧️";
+      else if (cond.includes("snow")) emoji = "❄️";
+      else if (cond.includes("cloud")) emoji = "☁️";
+      else if (cond.includes("storm")) emoji = "⛈️";
+      tile.innerHTML = `${emoji}<br>${t.content}`;
+    })
+    .catch(()=> tile.innerHTML = "Weather error");
+}
+
+/***********************
+ * 28. html
+ ***********************/
+else if (t.type === "html" && t.content) {
+  tile.innerHTML = t.content;
+}
+
+/***********************
+ * 29. lottie
+ ***********************/
+else if (t.type === "lottie" && t.content) {
+  tile.innerHTML = `<lottie-player src="${t.content}" background="transparent" speed="1" loop autoplay></lottie-player>`;
+}
+
+/***********************
+ * 30. icon
+ ***********************/
+else if (t.type === "icon" && t.content) {
+  tile.innerHTML = `<div style="font-size:4em">${t.content}</div>`;
+}
+
+/***********************
+ * 31. avatar
+ ***********************/
+else if (t.type === "avatar" && t.content) {
+  tile.innerHTML = `
+    <img src="${t.content}" style="width:80%;height:80%;border-radius:50%;object-fit:cover;">
+  `;
+}
+
+/***********************
+ * 32. bar chart
+ ***********************/
+else if (t.type === "bar" && t.content) {
+  const nums = t.content.split(",").map(n=>parseFloat(n));
+  const max = Math.max(...nums);
+  tile.style.flexDirection = "row";
+  tile.style.alignItems = "flex-end";
+  tile.style.justifyContent = "center";
+
+  nums.forEach(n=>{
+    const bar = document.createElement("div");
+    bar.style.width = `${100/nums.length}%`;
+    bar.style.height = `${(n/max)*80}%`;
+    bar.style.background = "#4caf50";
+    bar.style.margin = "0 2px";
+    tile.appendChild(bar);
+  });
+}
+
+/***********************
+ * 33. pie chart
+ ***********************/
+else if (t.type === "pie" && t.content) {
+  const nums = t.content.split(",").map(Number);
+  const total = nums.reduce((a,b)=>a+b,0);
+  let offset = 0;
+  tile.style.borderRadius = "50%";
+  tile.style.background = `conic-gradient(${nums.map((n,i)=> {
+      const pct = (n/total)*360;
+      const start = offset;
+      offset += pct;
+      return `${["#4caf50","#2196f3","#ff9800","#e91e63","#9c27b0"][i%5]} ${start}deg ${offset}deg`;
+  }).join(",")})`;
+}
+
+/***********************
+ * 34. list
+ ***********************/
+else if (t.type === "list" && t.content) {
+  const items = t.content.split("\\n").map(i=>`<li>${i}</li>`).join("");
+  tile.innerHTML = `<ul style="text-align:left;padding-left:20px">${items}</ul>`;
+}
+
+/***********************
+ * 35. table
+ ***********************/
+else if (t.type === "table" && t.content) {
+  const rows = t.content.split("\\n").map(r=>r.split(","));
+  tile.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;text-align:center">
+      ${rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #666;padding:4px">${c}</td>`).join("")}</tr>`).join("")}
+    </table>
+  `;
+}
+
+/***********************
+ * 36. status indicator
+ ***********************/
+else if (t.type === "status" && t.content) {
+  const v = t.content.toLowerCase();
+  let color = "#0f0";
+  if (v.includes("warn")) color = "#ff0";
+  else if (v.includes("alert") || v.includes("error")) color = "#f00";
+
+  tile.style.background = color;
+  tile.innerHTML = t.content.toUpperCase();
+}
+
+/***********************
+ * 37. mic visualizer
+ ***********************/
+else if (t.type === "mic") {
+  tile.innerHTML = `<div style="width:100%;display:flex;align-items:flex-end;gap:4px;"></div>`;
+  const bars = [];
+  for (let i=0;i<20;i++){
+    const b = document.createElement("div");
+    b.style.width="4%";
+    b.style.height="20%";
+    b.style.background="#4caf50";
+    bars.push(b);
+    tile.firstChild.appendChild(b);
+  }
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+    const ctx = new AudioContext();
+    const src = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 64;
+    src.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    setInterval(()=>{
+      analyser.getByteFrequencyData(data);
+      bars.forEach((b,i)=> b.style.height = `${(data[i]/255)*100}%`);
+    },100);
+  });
+}
+
+/***********************
+ * 38. particles
+ ***********************/
+else if (t.type === "particles") {
+  tile.innerHTML = "";
+  tile.style.background = "transparent";
+  const canvas = document.createElement("canvas");
+  tile.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  function resize(){ canvas.width = tile.clientWidth; canvas.height = tile.clientHeight; }
+  resize();
+  window.addEventListener("resize", resize);
+
+  const particles = Array.from({length:40}, ()=>({
+    x: Math.random()*canvas.width,
+    y: Math.random()*canvas.height,
+    vx: (Math.random()-.5)*0.5,
+    vy: (Math.random()-.5)*0.5
+  }));
+
+  function animate(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    particles.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy;
+      if (p.x<0||p.x>canvas.width) p.vx*=-1;
+      if (p.y<0||p.y>canvas.height) p.vy*=-1;
+      ctx.fillStyle="white";
+      ctx.fillRect(p.x,p.y,3,3);
+    });
+    requestAnimationFrame(animate);
+  }
+  animate();
+}
+
+/***********************
+ * 39. 3D model
+ ***********************/
+else if (t.type === "3dmodel" && t.content) {
+  tile.innerHTML = `
+    <model-viewer src="${t.content}" auto-rotate camera-controls style="width:100%;height:100%"></model-viewer>
+  `;
+}
+
+/***********************
+ * 40. scene slideshow
+ ***********************/
+else if (t.type === "scene" && t.content) {
+  const imgs = t.content.split(",");
+  let idx = 0;
+  tile.innerHTML = `<img src="${imgs[0]}" style="width:100%;height:100%;object-fit:cover;">`;
+  setInterval(()=>{
+    idx = (idx+1)%imgs.length;
+    tile.querySelector("img").src = imgs[idx];
+  }, 5000);
+}
+
+/***********************
+ * 41. weather_icon
+ ***********************/
+else if (t.type === "weather_icon" && t.content) {
+  fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`)
+    .then(r=>r.json())
+    .then(w=>{
+      const cond = w.current_condition[0].weatherDesc[0].value.toLowerCase();
+      let icon = "☀️";
+      if (cond.includes("rain")) icon="🌧️";
+      if (cond.includes("snow")) icon="❄️";
+      if (cond.includes("storm")) icon="⛈️";
+      if (cond.includes("cloud")) icon="☁️";
+      tile.innerHTML = `<div style="font-size:3em">${icon}</div><br>${t.content}`;
+    })
+    .catch(()=> tile.innerHTML="Weather error");
+}
+
+/***********************
+ * 42. openai response (AI tile)
+ ***********************/
+else if (t.type === "openai" && t.content) {
+  tile.innerHTML = "Loading AI...";
+  fetch("YOUR_PROXY_ENDPOINT?prompt="+encodeURIComponent(t.content))
+    .then(r=>r.text())
+    .then(txt=> tile.innerHTML = txt)
+    .catch(()=> tile.innerHTML="AI error");
+}
+
+/***********************
+ * 43. random_image
+ ***********************/
+else if (t.type === "random_image" && t.content) {
+  tile.innerHTML = `<img src="https://source.unsplash.com/800x800/?${encodeURIComponent(t.content)}">`;
+}
+
+/***********************
+ * 44. gif
+ ***********************/
+else if (t.type === "gif" && t.content) {
+  tile.innerHTML = `<img src="${t.content}" style="width:100%;height:100%;object-fit:cover;">`;
+}
+
+/***********************
+ * 45. menu grid
+ ***********************/
+else if (t.type === "menu" && t.content) {
+  const items = t.content.split("\\n");
+  tile.style.flexDirection = "column";
+  tile.innerHTML = items.map(i => 
+    `<button style="margin:5px;padding:10px;border-radius:8px;background:#444;color:white;font-size:1.1em">${i}</button>`
+  ).join("");
+}
+
+/***********************
+ * 46. carousel
+ ***********************/
+else if (t.type === "carousel" && t.content) {
+  const list = t.content.split(",");
+  let i = 0;
+  tile.innerHTML = `<img src="${list[0]}" style="width:100%;height:100%;object-fit:cover;">`;
+  setInterval(()=>{
+    i=(i+1)%list.length;
+    tile.querySelector("img").src=list[i];
+  },4000);
+}
 
           container.appendChild(tile);
         });
