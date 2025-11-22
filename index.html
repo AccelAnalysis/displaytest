@@ -230,14 +230,6 @@ else if (t.type === "map" && t.content) {
       src="https://www.google.com/maps?q=${encodeURIComponent(t.content)}&output=embed">
     </iframe>`;
 }
-else if (t.type === "map" && t.content) {
-  tile.innerHTML = `
-    <iframe 
-      width="100%" height="100%" 
-      style="border:0;"
-      src="https://www.google.com/maps?q=${encodeURIComponent(t.content)}&output=embed">
-    </iframe>`;
-}
 else if (t.type === "marquee" && t.content) {
   tile.innerHTML = `<div class="marquee">${t.content}</div>`;
 }
