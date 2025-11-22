@@ -4,14 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Remote Display</title>
-  <script src="https://www.youtube.com/iframe_api"></script>
+
   <style>
     body {
       margin: 0;
       height: 100vh;
       font-family: system-ui, sans-serif;
       color: white;
-      background-image: url("./background.jpg"); 
+      background-image: url("./background.jpg");
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
@@ -30,142 +30,69 @@
       padding: 6vh 6vw;
       text-shadow: 0 2px 8px rgba(0,0,0,0.8);
     }
-
-    .content-panel {
-      display: inline-block;
-      padding: 4vh 4vw;
-      background: rgba(0, 0, 0, 0.55);
-      border-radius: 20px;
-      max-width: 90vw;
-    }
   </style>
 </head>
 
 <body id="pageBody">
 
-<!-- Replace the old <video id="bgVideo"> with this -->
-<div id="ytPlayerContainer" 
-     allow="autoplay; fullscreen" 
-     style="
-       position: fixed;
-       top: 0; left: 0;
-       width: 100%; height: 100%;
-       z-index: -2;
-       display: none;
-       overflow: hidden;
-     "></div>
+  <!-- Direct video background (ad-free, perfect loop) -->
+  <video id="bgVideo" autoplay muted loop playsinline
+         style="position:fixed; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:-2; display:none;">
+  </video>
 
   <div class="overlay"></div>
   
   <div class="content">
-    <div id="headline" style="font-size:48px;font-weight:700;"></div>
-    <div id="subhead" style="font-size:28px;margin-top:10px;"></div>
-    <div id="status" style="font-size:24px;margin-top:18px;color:crimson;"></div>
-  </div> <!-- ✅ THIS WAS MISSING -->
+    <div id="headline" style="font-size:48px; font-weight:700;"></div>
+    <div id="subhead" style="font-size:28px; margin-top:10px;"></div>
+    <div id="status" style="font-size:24px; margin-top:18px; color:crimson;"></div>
+  </div>
 
   <script>
-  const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec";
 
-  let ytPlayer = null;
-  let currentVideoId = null;
+    async function refreshDisplay() {
+      try {
+        const res = await fetch(API_URL, { cache: "no-store" });
+        const data = await res.json();
 
-  // Called automatically by YouTube when API is ready
-  function onYouTubeIframeAPIReady() {
-    // Player will be created later when needed
-  }
+        // Text content
+        document.getElementById("headline").textContent = data.headline || "";
+        document.getElementById("subhead").textContent  = data.subhead  || "";
+        document.getElementById("status").textContent   = data.status   || "";
 
-  function createYouTubePlayer(videoId) {
-    if (ytPlayer) {
-      ytPlayer.loadVideoById(videoId);
-      return;
-    }
+        const body    = document.getElementById("pageBody");
+        const bgVideo = document.getElementById("bgVideo");
 
-    ytPlayer = new YT.Player('ytPlayerContainer', {
-      height: '100%',
-      width: '100%',
-      videoId: videoId,
-      host: 'https://www.youtube-nocookie.com',
-      playerVars: {
-        autoplay: 1,
-        mute: 1,
-        loop: 1,
-        playlist: videoId,       // required for true looping
-        controls: 0,
-        showinfo: 0,
-        modestbranding: 1,
-        iv_load_policy: 3,
-        fs: 0,
-        rel: 0,
-        disablekb: 1,
-        playsinline: 1,
-        start: 0,
-        enablejsapi: 1,
-        origin: location.origin
-      },
-      events: {
-        'onReady': (e) => { e.target.playVideo(); e.target.mute(); },
-        'onStateChange': (e) => {
-          if (e.data === YT.PlayerState.ENDED) {
-            e.target.playVideo(); // fallback loop
-          }
+        // 1. Direct video file (.mp4, .webm, .ogg, .m4v) → highest priority, 100% ad-free
+        if (data.videoUrl && typeof data.videoUrl === "string" && data.videoUrl.match(/\.(mp4|webm|ogg|m4v)($|\?)/i)) {
+          body.style.backgroundImage = "none";
+          bgVideo.src = data.videoUrl;           // change source
+          bgVideo.style.display = "block";       // show video
+          return;
         }
-      }
-    });
-  }
 
-  async function refreshDisplay() {
-    try {
-      const res = await fetch(API_URL, { cache: "no-store" });
-      const data = await res.json();
+        // 2. No direct video → fall back to custom static background image
+        bgVideo.style.display = "none";
+        bgVideo.src = ""; // clear video source to save bandwidth
 
-      document.getElementById("headline").textContent = data.headline || "";
-      document.getElementById("subhead").textContent  = data.subhead  || "";
-      document.getElementById("status").textContent   = data.status   || "";
-
-      const body = document.getElementById("pageBody");
-      const ytContainer = document.getElementById("ytPlayerContainer");
-
-      // === Extract YouTube ID from various formats ===
-      let ytId = null;
-      if (data.videoUrl && data.videoUrl.trim()) {
-	const match = data.videoUrl.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/i);
-        ytId = match ? match[1] : null;
-      }
-
-      // === PRIORITY: YouTube video → iframe player ===
-      if (ytId && ytId !== currentVideoId) {
-        body.style.backgroundImage = "none";
-        ytContainer.style.display = "block";
-        createYouTubePlayer(ytId);
-        currentVideoId = ytId;
-      } 
-      // === NO YouTube → fall back to static image (or your old direct video if you still want) ===
-      else if (!ytId) {
-        if (ytPlayer) {
-          ytPlayer.destroy();
-          ytPlayer = null;
-          currentVideoId = null;
-        }
-        ytContainer.style.display = "none";
-
-        if (data.bgUrl && data.bgUrl.trim()) {
-          body.style.backgroundImage = `url('${data.bgUrl}')`;
-          body.style.backgroundSize = "cover";
-          body.style.backgroundPosition = "center";
-          body.style.backgroundRepeat = "no-repeat";
+        if (data.bgUrl && typeof data.bgUrl === "string" && data.bgUrl.trim()) {
+          body.style.backgroundImage = `url('${data.bgUrl.trim()}')`;
         } else {
           body.style.backgroundImage = "url('./background.jpg')";
         }
+        body.style.backgroundSize = "cover";
+        body.style.backgroundPosition = "center";
+        body.style.backgroundRepeat = "no-repeat";
+
+      } catch (err) {
+        console.error("Display refresh failed", err);
       }
-
-    } catch (err) {
-      console.error("Display refresh failed", err);
     }
-  }
 
-  refreshDisplay();
-  setInterval(refreshDisplay, 5000);
-</script>
-
+    // Initial load + refresh every 5 seconds
+    refreshDisplay();
+    setInterval(refreshDisplay, 5000);
+  </script>
 </body>
 </html>
