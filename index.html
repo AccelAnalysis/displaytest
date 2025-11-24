@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Accel Display</title>
+  <title>Accel Display & Editor</title>
   <style>
     /* --- CORE STYLES --- */
     body, html { margin: 0; height: 100vh; overflow: hidden; background: #000; font-family: system-ui, sans-serif; color: white; }
@@ -12,18 +12,30 @@
     .tile { 
       position: absolute; 
       box-sizing: border-box; 
-      overflow: hidden; 
-      user-select: none; /* Prevents text highlighting while dragging */
+      user-select: none; 
+      /* Transitions only applied in Display Mode */
     }
     
     /* Transition only applied in Display Mode to prevent lag in Edit Mode */
     body:not(.editing) .tile { transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out; }
 
     /* Content styling */
-    .tile img, .tile video, .tile iframe { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
-    .tile iframe { pointer-events: auto; } /* Allow interaction in view mode */
-    body.editing .tile iframe { pointer-events: none; } /* Block iframe interaction in edit mode so we can drag it */
-
+    .tile-content-wrapper { 
+        width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; 
+        overflow: hidden; 
+    }
+    .tile img, .tile video, .tile iframe, .tile lottie-player { 
+        width: 100%; height: 100%; object-fit: cover; display: block; 
+    }
+    
+    /* Editor Preview Layer: Allows content to show, but blocks interaction for dragging */
+    .editor-preview-overlay {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.1); /* Slight dim to show editor is active */
+        pointer-events: none; /* Allows the parent tile to receive mouse events */
+    }
+    body:not(.editing) .editor-preview-overlay { display: none; }
+    
     /* Utilities */
     .marquee { white-space: nowrap; display: inline-block; animation: marquee 15s linear infinite; }
     @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
@@ -34,7 +46,6 @@
 
     /* --- EDITOR STYLES --- */
     body.editing #tilesContainer {
-      /* 5% Grid Background for alignment */
       background-image:
         linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
@@ -49,14 +60,14 @@
     
     body.editing .tile.selected { 
       border: 2px solid #3b82f6; 
-      z-index: 9999 !important; /* Bring selected to front */
+      z-index: 99999 !important; 
       box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
     }
 
     /* Resize Handles (4 corners) */
     .resize-handle {
       display: none; position: absolute; width: 12px; height: 12px;
-      background: #3b82f6; border: 1px solid #fff; z-index: 10000;
+      background: #3b82f6; border: 1px solid #fff; z-index: 100000;
     }
     body.editing .tile.selected .resize-handle { display: block; }
     .rh-tl { top: -6px; left: -6px; cursor: nw-resize; }
@@ -82,8 +93,8 @@
     body.editing #adminPanel.collapsed { right: -300px; opacity: 0.8; }
 
     .panel-header { 
-      font-weight: bold; margin-bottom: 15px; border-bottom: 1px solid #333; 
-      padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; 
+      font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #333; 
+      padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center; 
     }
 
     .form-group { margin-bottom: 10px; }
@@ -96,7 +107,6 @@
       border-color: #3b82f6; outline: none;
     }
     .row { display: flex; gap: 10px; }
-    
     .btn { width: 100%; padding: 10px; margin-top: 5px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; color: white; }
     .btn-save { background: #10b981; }
     .btn-add { background: #3b82f6; }
@@ -112,11 +122,6 @@
       width: 100%; height: 300px; background: #111; color: #0f0; border: 1px solid #333;
       font-family: monospace; font-size: 11px; white-space: pre; overflow: auto; 
     }
-    #loadingOverlay {
-        position:fixed; top:0; left:0; width:100%; height:100%; background:black; color:white;
-        display:flex; align-items:center; justify-content:center; z-index:9999; font-size:24px;
-        transition: opacity 0.5s; pointer-events:none; opacity:1;
-    }
   </style>
 
   <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
@@ -124,7 +129,6 @@
 </head>
 <body>
 
-  <div id="loadingOverlay">Loading Screen...</div>
   <div id="tilesContainer"></div>
 
   <div id="secretBtn" ondblclick="toggleEditMode()" title="Double Click or Ctrl+Shift+E to Edit"></div>
@@ -132,11 +136,19 @@
   <div id="adminPanel">
     <div class="panel-header">
       <button onclick="document.getElementById('adminPanel').classList.toggle('collapsed')" style="background:none; border:none; color:white; cursor:pointer;">➜</button>
-      <span>EDITOR</span>
+      <span>EDITOR MODE</span>
       <button onclick="toggleEditMode()" style="background:#ef4444; border:none; color:white; padding:2px 6px; border-radius:4px;">EXIT</button>
     </div>
 
     <div style="background:#333; padding:10px; border-radius:4px; margin-bottom:15px;">
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="color:white; font-weight:bold;">Global Settings</label>
+        <div class="row">
+             <div class="form-group"><label>Slide Duration (ms)</label><input type="number" id="globalSlideDuration" value="15000"></div>
+             <div class="form-group"><label>Screen ID</label><input type="number" id="globalScreenId" value="1" readonly></div>
+        </div>
+      </div>
+      
       <div class="form-group" style="margin-bottom:0;">
         <label style="color:white; font-weight:bold;">Editing Slide ID:</label>
         <div style="display:flex; gap:5px;">
@@ -151,22 +163,48 @@
     </div>
 
     <div id="tileForm" style="opacity:0.5; pointer-events:none;">
+      
       <div class="row">
-         <div class="form-group"><label>Screen ID</label><input type="number" id="inp-screenId" onchange="updateActiveTile('screenId', this.value)"></div>
-         <div class="form-group"><label>Slide ID</label><input type="number" id="inp-slideId" onchange="updateActiveTile('slideId', this.value)"></div>
+         <div class="form-group"><label>Tile Slide ID</label><input type="number" id="inp-slideId" onchange="updateActiveTile('slideId', this.value)"></div>
       </div>
 
       <div class="form-group">
         <label>Type</label>
         <select id="inp-type" onchange="updateActiveTile('type', this.value)">
-            <optgroup label="Basic"><option value="text">Text</option><option value="image">Image</option><option value="video">Video</option><option value="iframe">Iframe</option></optgroup>
-            <optgroup label="Data"><option value="clock">Clock</option><option value="weather_detailed">Weather</option><option value="stock">Stock</option><option value="crypto">Crypto</option><option value="rss">RSS</option></optgroup>
-            <optgroup label="Media"><option value="youtube">YouTube</option><option value="marquee">Marquee</option><option value="map">Map</option><option value="qrcode">QR Code</option></optgroup>
-            <optgroup label="Shapes"><option value="shape">Shape</option><option value="gradient">Gradient</option></optgroup>
+            <optgroup label="Core Media">
+                <option value="text">1. Text Block</option><option value="image">2. Image</option><option value="video">3. Video</option>
+                <option value="iframe">4. Iframe / Webpage</option><option value="youtube">5. YouTube</option>
+            </optgroup>
+            <optgroup label="Live Data">
+                <option value="clock">6. Clock (Analog)</option><option value="clock_digital">7. Clock (Digital)</option><option value="weather_simple">8. Weather (Simple)</option>
+                <option value="weather_detailed">9. Weather (Detailed)</option><option value="stock">10. Stock Quote</option><option value="crypto">11. Crypto Price</option>
+                <option value="rss">12. RSS Feed</option><option value="twitter">13. Social (Twitter/X)</option><option value="instagram">14. Social (Instagram)</option>
+            </optgroup>
+            <optgroup label="Visuals & Animations">
+                <option value="marquee">15. Marquee Ticker</option><option value="lottie">16. Lottie Animation</option><option value="model_3d">17. 3D Model (model-viewer)</option>
+                <option value="html">18. Custom HTML</option><option value="chart_line">19. Line Chart</option><option value="chart_bar">20. Bar Chart</option>
+                <option value="chart_pie">21. Pie Chart</option><option value="qrcode">22. QR Code</option>
+            </optgroup>
+             <optgroup label="Functional">
+                <option value="map">23. Map</option><option value="countdown">24. Countdown Timer</option><option value="contact">25. Contact Card</option>
+                <option value="calendar">26. Calendar</option><option value="table">27. Data Table</option><option value="timer_up">28. Count-Up Timer</option>
+            </optgroup>
+            <optgroup label="Shapes & Styling">
+                <option value="shape_rect">29. Shape (Rectangle)</option><option value="shape_circle">30. Shape (Circle)</option><option value="gradient">31. Gradient Background</option>
+                <option value="divider">32. Divider Line</option><option value="v_divider">33. Vertical Divider</option>
+            </optgroup>
+            <optgroup label="Special/Misc (22 more placeholders)">
+                <option value="alert_banner">34. Alert Banner</option><option value="call_to_action">35. CTA Button</option><option value="poll">36. Live Poll/Vote</option>
+                <option value="meeting_room">37. Meeting Room Status</option><option value="weather_map">38. Weather Map</option><option value="traffic_map">39. Traffic Map</option>
+                <option value="news_headline">40. News Headline</option><option value="currency_exchange">41. Currency Exchange</option><option value="system_status">42. System Status</option>
+                <option value="employee_spotlight">43. Employee Spotlight</option><option value="quote_of_day">44. Quote of the Day</option><option value="sports_score">45. Sports Score</option>
+                <option value="web_link">46. Web Link Icon</option>
+            </optgroup>
         </select>
       </div>
-      <div class="form-group"><label>Content</label><textarea id="inp-content" rows="3" oninput="updateActiveTile('content', this.value)"></textarea></div>
+      <div class="form-group"><label>Content (URL or Text)</label><textarea id="inp-content" rows="3" oninput="updateActiveTile('content', this.value)"></textarea></div>
 
+      <label style="font-weight:bold; margin-top:5px; display:block; border-top: 1px solid #333; padding-top:10px;">Geometry (%)</label>
       <div class="row">
         <div class="form-group"><label>X (%)</label><input type="number" step="0.1" id="inp-x" onchange="updateActiveTile('x', this.value + '%')"></div>
         <div class="form-group"><label>Y (%)</label><input type="number" step="0.1" id="inp-y" onchange="updateActiveTile('y', this.value + '%')"></div>
@@ -176,13 +214,36 @@
         <div class="form-group"><label>H (%)</label><input type="number" step="0.1" id="inp-height" onchange="updateActiveTile('height', this.value + '%')"></div>
       </div>
       
+      <label style="font-weight:bold; margin-top:5px; display:block; border-top: 1px solid #333; padding-top:10px;">Style</label>
       <div class="row">
         <div class="form-group"><label>Bg Color</label><input type="color" id="inp-bgColor" style="height:30px; padding:0;" onchange="updateActiveTile('bgColor', this.value)"></div>
         <div class="form-group"><label>Text Color</label><input type="color" id="inp-textColor" style="height:30px; padding:0;" onchange="updateActiveTile('textColor', this.value)"></div>
       </div>
+      
       <div class="row">
-        <div class="form-group"><label>Font Size</label><input id="inp-fontSize" onchange="updateActiveTile('fontSize', this.value)"></div>
-        <div class="form-group"><label>Z-Index</label><input type="number" id="inp-zIndex" onchange="updateActiveTile('zIndex', this.value)"></div>
+          <div class="form-group"><label>Font Size (px/em)</label><input id="inp-fontSize" onchange="updateActiveTile('fontSize', this.value)"></div>
+          <div class="form-group"><label>Font Family</label><input id="inp-fontFamily" onchange="updateActiveTile('fontFamily', this.value)"></div>
+      </div>
+      <div class="row">
+          <div class="form-group"><label>Padding (px/% )</label><input id="inp-padding" onchange="updateActiveTile('padding', this.value)"></div>
+          <div class="form-group"><label>Radius (px/% )</label><input id="inp-radius" onchange="updateActiveTile('radius', this.value)"></div>
+      </div>
+      
+      <div class="row">
+          <div class="form-group"><label>Align</label><select id="inp-align" onchange="updateActiveTile('align', this.value)">
+              <option value="center">center</option><option value="left">left</option><option value="right">right</option><option value="justify">justify</option>
+          </select></div>
+          <div class="form-group"><label>Bold (400-900)</label><input id="inp-bold" onchange="updateActiveTile('bold', this.value)"></div>
+      </div>
+      
+      <label style="font-weight:bold; margin-top:5px; display:block; border-top: 1px solid #333; padding-top:10px;">Effects</label>
+      <div class="row">
+          <div class="form-group"><label>Z-Index</label><input type="number" id="inp-zIndex" onchange="updateActiveTile('zIndex', this.value)"></div>
+          <div class="form-group"><label>Opacity (0-1)</label><input type="number" step="0.05" min="0" max="1" id="inp-opacity" onchange="updateActiveTile('opacity', this.value)"></div>
+      </div>
+      <div class="row">
+          <div class="form-group"><label>Rotate (deg)</label><input id="inp-rotate" onchange="updateActiveTile('rotate', this.value)"></div>
+          <div class="form-group"><label>Shadow (CSS)</label><input id="inp-shadow" onchange="updateActiveTile('shadow', this.value)"></div>
       </div>
 
       <button class="btn btn-del" onclick="deleteActiveTile()">Delete Selected</button>
@@ -199,8 +260,7 @@
     <p style="font-size:12px; color:#ccc">
         1. Click the box below.<br>
         2. Select All (Ctrl+A) and Copy (Ctrl+C).<br>
-        3. Go to your Google Sheet.<br>
-        4. Click Cell <b>A2</b> and Paste (Ctrl+V).
+        3. Go to your Google Sheet, click Cell **A2** and Paste (Ctrl+V).
     </p>
     <textarea id="exportData" readonly onclick="this.select()"></textarea>
     <button class="btn btn-save" onclick="document.getElementById('exportModal').style.display='none'">Close</button>
@@ -208,32 +268,52 @@
 
 <script>
   // --- CONFIG ---
-  const API_URL = "https://script.google.com/macros/s/AKfycbwfvm03NIpoxNeTr9sfB75RlHzispd9oz3okFHAMmxPpuwLu672AeltcwgYb7Gl_ZHedQ/exec"; 
-  const SLIDE_DURATION_MS = 15000;
+  const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec"; 
   
   // --- STATE ---
   let tiles = [];
   let isEditing = false;
-  let activeTileId = null; // using array index
+  let activeTileId = null;
   let slideTimer;
   let refreshTimer;
   let currentPlaySlide = 1;
   let currentEditSlide = 1;
   let maxSlide = 1;
-  
+  let SLIDE_DURATION_MS = 15000; // Default, can be changed via editor
+
   const urlParams = new URLSearchParams(window.location.search);
   const SCREEN_ID = parseInt(urlParams.get('screenId')) || 1;
 
-  // --- INITIALIZATION ---
+  // Map of keys to their respective DOM style properties for fast update
+  const domStyleMap = {
+      'x': (el, val) => el.style.left = val,
+      'y': (el, val) => el.style.top = val,
+      'width': (el, val) => el.style.width = val,
+      'height': (el, val) => el.style.height = val,
+      'bgColor': (el, val) => el.style.backgroundColor = val,
+      'textColor': (el, val) => el.style.color = val,
+      'fontSize': (el, val) => el.style.fontSize = val,
+      'padding': (el, val) => el.style.padding = val,
+      'radius': (el, val) => el.style.borderRadius = val,
+      'align': (el, val) => el.style.textAlign = val,
+      'fontFamily': (el, val) => el.style.fontFamily = val,
+      'bold': (el, val) => el.style.fontWeight = val,
+      'shadow': (el, val) => el.style.boxShadow = val,
+      'opacity': (el, val) => el.style.opacity = val,
+      'rotate': (el, val) => el.style.transform = `rotate(${val}deg)`,
+      'zIndex': (el, val) => el.style.zIndex = val,
+  };
+
+  // --- INITIALIZATION & REFRESH ---
   async function loadData() {
+    if(isEditing) return; 
+
     try {
-      document.getElementById('loadingOverlay').style.opacity = '1';
       const res = await fetch(`${API_URL}?screenId=${SCREEN_ID}&t=${Date.now()}`);
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
       
-      // Data Normalization
-      tiles = data.map(t => ({
+      const newTiles = data.map(t => ({
         ...t,
         screenId: parseInt(t.screenId) || 1,
         slideId: parseInt(t.slideId) || 1,
@@ -242,78 +322,99 @@
         y: normalizeUnit(t.y),
         width: normalizeUnit(t.width),
         height: normalizeUnit(t.height),
-        zIndex: parseInt(t.zIndex) || 1
+        zIndex: parseInt(t.zIndex) || 1,
+        opacity: parseFloat(t.opacity) || 1,
+        // Ensure other numerical fields are numbers
+        rotate: parseFloat(t.rotate) || 0,
+        // Set duration from a tile if one is defined (e.g. from a 'config' tile type)
       }));
 
-      // Calc max slide
+      tiles = newTiles;
       maxSlide = tiles.reduce((max, t) => Math.max(max, t.slideId), 1);
       
       renderBoard();
       startSlideshow();
       
-      document.getElementById('loadingOverlay').style.opacity = '0';
     } catch (e) {
-      console.error(e);
-      document.getElementById('loadingOverlay').textContent = "Error Loading Data";
+      console.error("Load Error (Will retry in 60s)", e);
     }
   }
 
   function normalizeUnit(val) {
     if (!val) return "0%";
-    // If it's a raw number or string number, assume % for compatibility
-    if (!isNaN(val)) return val + "%"; 
-    if (val.toString().includes("px")) {
-        // Convert pixels to approximation if user messed up manual entry
-        return "10%"; 
-    }
+    if (val.toString().endsWith('%') || val.toString().endsWith('px')) return val;
+    // Assume raw numbers are percentages for legacy compatibility
+    if (!isNaN(val)) return parseFloat(val).toFixed(2) + "%"; 
     return val; 
   }
 
   // --- RENDERING ---
   function renderBoard() {
     const container = document.getElementById("tilesContainer");
-    container.innerHTML = ""; // Clear board
     
-    // Determine which slide to show
+    // In display mode, only update classes for seamless transition
+    if(!isEditing) {
+        // Simple update: find all tiles and update visibility based on currentPlaySlide
+        document.querySelectorAll('.tile').forEach(el => {
+            const t = tiles[el.dataset.index];
+            if(t.slideId === currentPlaySlide) {
+                el.classList.remove('slide-hidden');
+                el.classList.add('slide-active');
+            } else {
+                 el.classList.remove('slide-active');
+                 el.classList.add('slide-hidden');
+            }
+        });
+        startClocks();
+        return;
+    }
+
+    // In Edit Mode, we must re-render to attach new handlers and controls
+    container.innerHTML = "";
     const visibleSlide = isEditing ? currentEditSlide : currentPlaySlide;
     
     tiles.forEach((t, index) => {
-      // In Play Mode: Filter by visible slide. In Edit Mode: Filter by Edit Slide
-      if (!isEditing && t.slideId !== visibleSlide) return;
+      // Show only tiles on the current edit slide
       if (isEditing && t.slideId !== currentEditSlide) return;
-      if (!t.visible && !isEditing) return;
+      if (!t.visible && !isEditing) return; // Only hide if explicitly marked invisible in display mode
 
       const el = document.createElement("div");
       el.className = "tile";
       el.dataset.index = index;
       
-      // Apply geometry
-      el.style.left = t.x; 
-      el.style.top = t.y;
-      el.style.width = t.width; 
-      el.style.height = t.height;
+      // Apply all styles from the data model
+      el.style.left = t.x; el.style.top = t.y; el.style.width = t.width; el.style.height = t.height;
       el.style.zIndex = t.zIndex;
-
-      // Apply styling
-      el.style.backgroundColor = t.bgColor || "rgba(0,0,0,0.5)";
+      el.style.backgroundColor = t.bgColor || "transparent";
       el.style.color = t.textColor || "white";
       el.style.fontSize = t.fontSize || "24px";
-      el.style.padding = t.padding || "10px";
+      el.style.padding = t.padding || "0";
       el.style.borderRadius = t.radius || "0px";
       el.style.textAlign = t.align || "center";
-      el.style.display = "flex";
-      el.style.alignItems = "center";
-      el.style.justifyContent = "center";
+      el.style.fontFamily = t.fontFamily || "inherit";
+      el.style.fontWeight = t.bold || "normal";
+      el.style.boxShadow = t.shadow || "none";
+      el.style.opacity = t.opacity || "1";
+      el.style.transform = t.rotate ? `rotate(${t.rotate}deg)` : 'none';
 
-      // Render Content
-      el.innerHTML = getTileContent(t);
+      el.style.display = "flex"; el.style.alignItems = "center"; el.style.justifyContent = "center";
+      
+      // Content Wrapper for consistent layout/padding
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tile-content-wrapper';
+      wrapper.innerHTML = getTileContent(t);
 
-      // Editor Handles
-      if (isEditing) {
+      el.appendChild(wrapper);
+      
+      // Editor Preview Overlay
+      if(isEditing) {
+        const overlay = document.createElement('div');
+        overlay.className = 'editor-preview-overlay';
+        el.appendChild(overlay);
+
         el.onmousedown = (e) => handleDragStart(e, index, el);
-        el.ontouchstart = (e) => handleDragStart(e, index, el); // Touch support
+        el.ontouchstart = (e) => handleDragStart(e, index, el);
         
-        // Add 4 corner handles
         ['tl','tr','bl','br'].forEach(pos => {
             const h = document.createElement('div');
             h.className = `resize-handle rh-${pos}`;
@@ -321,12 +422,18 @@
             h.ontouchstart = (e) => handleResizeStart(e, index, el, pos);
             el.appendChild(h);
         });
+
+        // Highlight selected tile if it matches the active ID
+        if(index === activeTileId) el.classList.add('selected');
+      } else {
+         // Apply slide visibility classes for animation
+         if(t.slideId === visibleSlide) el.classList.add('slide-active');
+         else el.classList.add('slide-hidden');
       }
-      
+
       container.appendChild(el);
     });
 
-    // Start independent clocks
     startClocks();
   }
 
@@ -335,35 +442,39 @@
       
       switch(t.type) {
           case 'image': return `<img src="${t.content}">`;
-          case 'video': return isEditing ? `[Video]` : `<video src="${t.content}" autoplay loop muted playsinline></video>`;
+          case 'video': return `<video src="${t.content}" autoplay loop muted playsinline></video>`;
+          case 'iframe': return `<iframe src="${t.content}" style="border:0; width:100%; height:100%"></iframe>`;
           case 'text': return t.content.replace(/\n/g, '<br>');
-          case 'clock': return `<div class="live-clock">${new Date().toLocaleTimeString()}</div>`;
-          case 'iframe': return isEditing ? `[Iframe]` : `<iframe src="${t.content}" style="border:0; width:100%; height:100%"></iframe>`;
+          case 'clock': 
+          case 'clock_digital': return `<div class="live-clock">${new Date().toLocaleTimeString()}</div>`;
           case 'marquee': return `<div class="marquee">${t.content}</div>`;
-          case 'html': return t.content;
-          default: return t.content;
+          case 'lottie': return `<lottie-player src="${t.content}" background="transparent" speed="1" loop autoplay></lottie-player>`;
+          case 'model_3d': return `<model-viewer src="${t.content}" auto-rotate camera-controls></model-viewer>`;
+          case 'shape_rect': return `<div style="width:100%; height:100%; background:${t.bgColor}; border-radius:${t.radius}"></div>`;
+          // ... all other 46 types will use the content as fallback or require specific logic
+          default: return t.content; 
       }
   }
 
   function startClocks() {
-      // Update clocks independently of re-renders
-      const clocks = document.querySelectorAll('.live-clock');
-      if(clocks.length > 0) {
-          if(window.clockInterval) clearInterval(window.clockInterval);
-          window.clockInterval = setInterval(() => {
-              document.querySelectorAll('.live-clock').forEach(c => c.innerText = new Date().toLocaleTimeString());
-          }, 1000);
-      }
+      // Independent clock updates for performance
+      if(window.clockInterval) clearInterval(window.clockInterval);
+      window.clockInterval = setInterval(() => {
+          document.querySelectorAll('.live-clock').forEach(c => c.innerText = new Date().toLocaleTimeString());
+      }, 1000);
   }
 
   // --- SLIDESHOW LOGIC ---
   function startSlideshow() {
     if (slideTimer) clearInterval(slideTimer);
+    SLIDE_DURATION_MS = parseInt(document.getElementById('globalSlideDuration')?.value) || 15000;
+
     slideTimer = setInterval(() => {
       if (isEditing) return;
       currentPlaySlide++;
       if (currentPlaySlide > maxSlide) currentPlaySlide = 1;
-      renderBoard(); // Simple re-render for slide change
+      // In display mode, only re-render classes, not full DOM
+      renderBoard(); 
     }, SLIDE_DURATION_MS);
   }
 
@@ -373,20 +484,19 @@
     document.body.classList.toggle("editing");
     
     if (isEditing) {
-      // Stop auto-rotation and refresh
       clearInterval(slideTimer);
       clearInterval(refreshTimer);
-      
-      // Sync Editor slide to current play slide
       currentEditSlide = currentPlaySlide;
-      document.getElementById('globalSlideId').value = currentEditSlide;
-      document.getElementById('adminPanel').classList.remove('collapsed');
       
+      document.getElementById('globalSlideId').value = currentEditSlide;
+      document.getElementById('globalScreenId').value = SCREEN_ID;
+      document.getElementById('globalSlideDuration').value = SLIDE_DURATION_MS;
+
+      document.getElementById('adminPanel').classList.remove('collapsed');
       renderBoard();
     } else {
-      // Resume
       activeTileId = null;
-      loadData(); // Reload from server to reset changes or confirm save
+      loadData(); 
       refreshTimer = setInterval(loadData, 60000);
       startSlideshow();
     }
@@ -395,6 +505,7 @@
   function changeEditorSlide(dir) {
       currentEditSlide += dir;
       if(currentEditSlide < 1) currentEditSlide = 1;
+      if(currentEditSlide > maxSlide) maxSlide = currentEditSlide; // Allow adding new slides
       document.getElementById('globalSlideId').value = currentEditSlide;
       activeTileId = null;
       updateFormState();
@@ -407,20 +518,24 @@
     const el = document.querySelector(`.tile[data-index='${index}']`);
     if(el) el.classList.add('selected');
     
-    // Populate Form
+    document.getElementById('adminPanel').classList.remove('collapsed');
+    
     const t = tiles[index];
     const map = {
-        'type': t.type, 'content': t.content, 
-        'x': parseFloat(t.x), 'y': parseFloat(t.y), 
-        'width': parseFloat(t.width), 'height': parseFloat(t.height),
-        'bgColor': t.bgColor, 'textColor': t.textColor,
-        'fontSize': t.fontSize, 'zIndex': t.zIndex,
-        'screenId': t.screenId, 'slideId': t.slideId
+        'slideId': t.slideId, 'type': t.type, 'content': t.content || '', 
+        'x': parseFloat(t.x) || 0, 'y': parseFloat(t.y) || 0, 
+        'width': parseFloat(t.width) || 0, 'height': parseFloat(t.height) || 0,
+        'bgColor': t.bgColor || '#000000', 'textColor': t.textColor || '#ffffff',
+        'fontSize': t.fontSize || '24px', 'padding': t.padding || '0px', 
+        'radius': t.radius || '0px', 'align': t.align || 'center',
+        'fontFamily': t.fontFamily || '', 'bold': t.bold || '',
+        'zIndex': t.zIndex || 1, 'opacity': t.opacity || 1, 
+        'rotate': t.rotate || 0, 'shadow': t.shadow || ''
     };
     
     for (const [key, val] of Object.entries(map)) {
         const inp = document.getElementById(`inp-${key}`);
-        if(inp) inp.value = val || '';
+        if(inp) inp.value = val;
     }
     updateFormState();
   }
@@ -433,24 +548,25 @@
 
   function updateActiveTile(key, value) {
       if(activeTileId === null) return;
+      
+      // Update state
       tiles[activeTileId][key] = value;
       
-      // Update DOM directly for performance (no full re-render)
       const el = document.querySelector(`.tile[data-index='${activeTileId}']`);
-      if(el) {
-          if(['x','y','width','height','zIndex','bgColor','color','fontSize'].includes(key)) {
-              if(key === 'x') el.style.left = value;
-              if(key === 'y') el.style.top = value;
-              if(key === 'width') el.style.width = value;
-              if(key === 'height') el.style.height = value;
-              if(key === 'bgColor') el.style.backgroundColor = value;
-          } else {
-              // Content/Type changes require re-render
-              renderBoard();
-              // Re-select
-              setTimeout(() => activateTile(activeTileId), 0);
-          }
+      if(!el) return;
+
+      // Update DOM directly for instant visual feedback
+      if (domStyleMap[key]) {
+          domStyleMap[key](el, value);
+      } else if (key === 'content' || key === 'type') {
+          // Content or Type change requires re-building the inner HTML
+          el.querySelector('.tile-content-wrapper').innerHTML = getTileContent(tiles[activeTileId]);
+      } else if (key === 'slideId') {
+           // If slide ID changes, we must re-render the board to hide/show the tile correctly
+           renderBoard();
+           setTimeout(() => activateTile(activeTileId), 0);
       }
+      
   }
 
   function addNewTile() {
@@ -461,7 +577,7 @@
           content: 'New Tile',
           x: '35%', y: '35%', width: '30%', height: '20%',
           bgColor: '#3b82f6',
-          visible: true, zIndex: 10
+          visible: true, zIndex: 10, opacity: 1
       });
       renderBoard();
       activateTile(tiles.length - 1);
@@ -479,10 +595,10 @@
   // --- DRAG & DROP (Unified Mouse/Touch) ---
   function handleDragStart(e, index, el) {
     e.stopPropagation();
-    // Determine input type
     const isTouch = e.type === 'touchstart';
-    const pageX = isTouch ? e.touches[0].pageX : e.pageX;
-    const pageY = isTouch ? e.touches[0].pageY : e.pageY;
+    const input = isTouch ? e.touches[0] : e;
+    const pageX = input.pageX;
+    const pageY = input.pageY;
     
     activateTile(index);
     
@@ -492,21 +608,21 @@
     const containerH = el.parentElement.clientHeight;
     
     const snap = document.getElementById('snapGrid').checked;
+    const snapSizeX = containerW * 0.05;
+    const snapSizeY = containerH * 0.05;
 
     function onMove(ev) {
-        ev.preventDefault();
-        const curX = isTouch ? ev.touches[0].pageX : ev.pageX;
-        const curY = isTouch ? ev.touches[0].pageY : ev.pageY;
+        if(isTouch) ev.preventDefault();
+        const currentInput = isTouch ? ev.touches[0] : ev;
+        const curX = currentInput.pageX;
+        const curY = currentInput.pageY;
         
         let newX = startLeft + (curX - pageX);
         let newY = startTop + (curY - pageY);
         
-        // Snap Logic (5% increments)
         if (snap) {
-            const stepX = containerW * 0.05;
-            const stepY = containerH * 0.05;
-            newX = Math.round(newX / stepX) * stepX;
-            newY = Math.round(newY / stepY) * stepY;
+            newX = Math.round(newX / snapSizeX) * snapSizeX;
+            newY = Math.round(newY / snapSizeY) * snapSizeY;
         }
 
         el.style.left = newX + 'px';
@@ -518,34 +634,27 @@
     }
 
     function onEnd() {
-        if(isTouch) {
-            document.removeEventListener('touchmove', onMove);
-            document.removeEventListener('touchend', onEnd);
-        } else {
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onEnd);
-        }
+        const handler = isTouch ? 'touch' : 'mouse';
+        document.removeEventListener(`${handler}move`, onMove);
+        document.removeEventListener(`${handler}up`, onEnd);
         
-        // Save Final State
+        // Save Final State (Normalize to percentage string)
         tiles[index].x = ((el.offsetLeft / containerW) * 100).toFixed(2) + "%";
         tiles[index].y = ((el.offsetTop / containerH) * 100).toFixed(2) + "%";
     }
 
-    if(isTouch) {
-        document.addEventListener('touchmove', onMove, {passive: false});
-        document.addEventListener('touchend', onEnd);
-    } else {
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onEnd);
-    }
+    const handler = isTouch ? 'touch' : 'mouse';
+    document.addEventListener(`${handler}move`, onMove, {passive: !isTouch});
+    document.addEventListener(`${handler}up`, onEnd);
   }
 
   // --- RESIZE LOGIC (Unified) ---
   function handleResizeStart(e, index, el, corner) {
     e.stopPropagation();
     const isTouch = e.type === 'touchstart';
-    const pageX = isTouch ? e.touches[0].pageX : e.pageX;
-    const pageY = isTouch ? e.touches[0].pageY : e.pageY;
+    const input = isTouch ? e.touches[0] : e;
+    const pageX = input.pageX;
+    const pageY = input.pageY;
 
     const startW = el.offsetWidth;
     const startH = el.offsetHeight;
@@ -555,48 +664,44 @@
     const containerH = el.parentElement.clientHeight;
     
     const snap = document.getElementById('snapGrid').checked;
+    const snapSizeX = containerW * 0.05;
+    const snapSizeY = containerH * 0.05;
 
     function onMove(ev) {
-        ev.preventDefault();
-        const curX = isTouch ? ev.touches[0].pageX : ev.pageX;
-        const curY = isTouch ? ev.touches[0].pageY : ev.pageY;
+        if(isTouch) ev.preventDefault();
+        const currentInput = isTouch ? ev.touches[0] : ev;
+        const curX = currentInput.pageX;
+        const curY = currentInput.pageY;
         const dx = curX - pageX;
         const dy = curY - pageY;
 
         let newW = startW, newH = startH, newX = startX, newY = startY;
 
-        // Calculate based on corner
         if (corner.includes('r')) newW = startW + dx;
         if (corner.includes('l')) { newW = startW - dx; newX = startX + dx; }
         if (corner.includes('b')) newH = startH + dy;
         if (corner.includes('t')) { newH = startH - dy; newY = startY + dy; }
         
-        // Snap Dimensions
-        if(snap) {
-             const stepX = containerW * 0.05;
-             const stepY = containerH * 0.05;
-             newW = Math.round(newW / stepX) * stepX;
-             newH = Math.round(newH / stepY) * stepY;
-             // Note: Snapping position while resizing top/left is complex, omitted for stability
+        if (snap) {
+             newW = Math.round(newW / snapSizeX) * snapSizeX;
+             newH = Math.round(newH / snapSizeY) * snapSizeY;
+             if (corner.includes('l')) newX = Math.round(newX / snapSizeX) * snapSizeX;
+             if (corner.includes('t')) newY = Math.round(newY / snapSizeY) * snapSizeY;
         }
 
-        // Apply Min Size
-        if (newW > 20) { el.style.width = newW + 'px'; el.style.left = newX + 'px'; }
-        if (newH > 20) { el.style.height = newH + 'px'; el.style.top = newY + 'px'; }
+        if (newW > 20) { el.style.width = newW + 'px'; if (corner.includes('l')) el.style.left = newX + 'px'; }
+        if (newH > 20) { el.style.height = newH + 'px'; if (corner.includes('t')) el.style.top = newY + 'px'; }
         
-        // Update Inputs
         document.getElementById('inp-width').value = ((el.offsetWidth/containerW)*100).toFixed(2);
         document.getElementById('inp-height').value = ((el.offsetHeight/containerH)*100).toFixed(2);
+        document.getElementById('inp-x').value = ((el.offsetLeft/containerW)*100).toFixed(2);
+        document.getElementById('inp-y').value = ((el.offsetTop/containerH)*100).toFixed(2);
     }
 
     function onEnd() {
-        if(isTouch) {
-            document.removeEventListener('touchmove', onMove);
-            document.removeEventListener('touchend', onEnd);
-        } else {
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onEnd);
-        }
+        const handler = isTouch ? 'touch' : 'mouse';
+        document.removeEventListener(`${handler}move`, onMove);
+        document.removeEventListener(`${handler}up`, onEnd);
         
         tiles[index].width = ((el.offsetWidth / containerW) * 100).toFixed(2) + "%";
         tiles[index].height = ((el.offsetHeight / containerH) * 100).toFixed(2) + "%";
@@ -604,13 +709,9 @@
         tiles[index].y = ((el.offsetTop / containerH) * 100).toFixed(2) + "%";
     }
 
-    if(isTouch) {
-        document.addEventListener('touchmove', onMove, {passive: false});
-        document.addEventListener('touchend', onEnd);
-    } else {
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onEnd);
-    }
+    const handler = isTouch ? 'touch' : 'mouse';
+    document.addEventListener(`${handler}move`, onMove, {passive: !isTouch});
+    document.addEventListener(`${handler}up`, onEnd);
   }
 
   // --- EXPORT ---
@@ -627,9 +728,10 @@
       const tsv = tiles.map(t => {
           return headers.map(h => {
               let val = t[h];
-              if (val === undefined || val === null) return "";
+              if (h === 'screenId') val = SCREEN_ID; // Force current screen ID on export
+              if (val === undefined || val === null || val === 'none') return "";
               if (h === 'visible') return val ? "TRUE" : "FALSE";
-              return val.toString().replace(/(\r\n|\n|\r)/gm, " "); // Clean newlines
+              return val.toString().replace(/(\r\n|\n|\r)/gm, " "); 
           }).join("\t");
       }).join("\n");
       
@@ -639,7 +741,7 @@
 
   // --- KEYBOARD SHORTCUT ---
   document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+      if (e.ctrlKey && e.shiftKey && e.key.toUpperCase() === 'E') {
           e.preventDefault();
           toggleEditMode();
       }
