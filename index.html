@@ -5,419 +5,650 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Accel Display</title>
   <style>
-    body,html{margin:0;height:100vh;overflow:hidden;background:#000;font-family:system-ui,sans-serif;color:white}
-    #tilesContainer{position:relative;width:100%;height:100%}
-    .tile{position:absolute;box-sizing:border-box;overflow:hidden;user-select:none;transition:all .6s ease-in-out}
-    .tile img,.tile video,.tile iframe{width:100%;height:100%;object-fit:cover;display:block}
-    .tile video{background:#000}
-    .marquee { white-space: nowrap; animation: marquee 15s linear infinite; }
-    @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+    /* --- CORE STYLES --- */
+    body, html { margin: 0; height: 100vh; overflow: hidden; background: #000; font-family: system-ui, sans-serif; color: white; }
+    #tilesContainer { position: relative; width: 100%; height: 100%; }
     
-    /* SLIDE TRANSITION STYLES */
-    .slide-hidden { opacity: 0 !important; visibility: hidden; }
-    .slide-active { opacity: 1 !important; visibility: visible; transition: opacity 1.5s; }
+    .tile { 
+      position: absolute; 
+      box-sizing: border-box; 
+      overflow: hidden; 
+      user-select: none; /* Prevents text highlighting while dragging */
+    }
+    
+    /* Transition only applied in Display Mode to prevent lag in Edit Mode */
+    body:not(.editing) .tile { transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out; }
+
+    /* Content styling */
+    .tile img, .tile video, .tile iframe { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+    .tile iframe { pointer-events: auto; } /* Allow interaction in view mode */
+    body.editing .tile iframe { pointer-events: none; } /* Block iframe interaction in edit mode so we can drag it */
+
+    /* Utilities */
+    .marquee { white-space: nowrap; display: inline-block; animation: marquee 15s linear infinite; }
+    @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+
+    /* Slide Logic */
+    .slide-hidden { opacity: 0; visibility: hidden; pointer-events: none; z-index: -1; }
+    .slide-active { opacity: 1; visibility: visible; z-index: 1; }
+
+    /* --- EDITOR STYLES --- */
+    body.editing #tilesContainer {
+      /* 5% Grid Background for alignment */
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+      background-size: 5% 5%;
+    }
+
+    body.editing .tile { 
+      border: 1px dashed rgba(255, 255, 255, 0.3); 
+      cursor: grab; 
+    }
+    body.editing .tile:active { cursor: grabbing; }
+    
+    body.editing .tile.selected { 
+      border: 2px solid #3b82f6; 
+      z-index: 9999 !important; /* Bring selected to front */
+      box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+    }
+
+    /* Resize Handles (4 corners) */
+    .resize-handle {
+      display: none; position: absolute; width: 12px; height: 12px;
+      background: #3b82f6; border: 1px solid #fff; z-index: 10000;
+    }
+    body.editing .tile.selected .resize-handle { display: block; }
+    .rh-tl { top: -6px; left: -6px; cursor: nw-resize; }
+    .rh-tr { top: -6px; right: -6px; cursor: ne-resize; }
+    .rh-bl { bottom: -6px; left: -6px; cursor: sw-resize; }
+    .rh-br { bottom: -6px; right: -6px; cursor: se-resize; }
+
+    /* Secret Button */
+    #secretBtn {
+      position: fixed; bottom: 0; right: 0; width: 60px; height: 60px;
+      z-index: 99999; cursor: default;
+    }
+
+    /* ADMIN PANEL */
+    #adminPanel {
+      position: fixed; top: 0; right: -360px; width: 340px; height: 100%;
+      background: #1a1a1a; border-left: 1px solid #333; 
+      transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 100000; display: flex; flex-direction: column; padding: 15px; 
+      box-sizing: border-box; box-shadow: -5px 0 15px rgba(0,0,0,0.8);
+    }
+    body.editing #adminPanel { right: 0; }
+    body.editing #adminPanel.collapsed { right: -300px; opacity: 0.8; }
+
+    .panel-header { 
+      font-weight: bold; margin-bottom: 15px; border-bottom: 1px solid #333; 
+      padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; 
+    }
+
+    .form-group { margin-bottom: 10px; }
+    .form-group label { display: block; font-size: 11px; color: #aaa; margin-bottom: 4px; }
+    .form-group input, .form-group select, .form-group textarea { 
+      width: 100%; padding: 6px; background: #222; border: 1px solid #444; 
+      color: white; border-radius: 4px; box-sizing: border-box;
+    }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+      border-color: #3b82f6; outline: none;
+    }
+    .row { display: flex; gap: 10px; }
+    
+    .btn { width: 100%; padding: 10px; margin-top: 5px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; color: white; }
+    .btn-save { background: #10b981; }
+    .btn-add { background: #3b82f6; }
+    .btn-del { background: #ef4444; }
+    
+    /* Export Modal */
+    #exportModal {
+      display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 600px; background: #222; border: 1px solid #444; z-index: 200000; padding: 20px;
+      box-shadow: 0 0 50px rgba(0,0,0,0.9);
+    }
+    #exportData { 
+      width: 100%; height: 300px; background: #111; color: #0f0; border: 1px solid #333;
+      font-family: monospace; font-size: 11px; white-space: pre; overflow: auto; 
+    }
+    #loadingOverlay {
+        position:fixed; top:0; left:0; width:100%; height:100%; background:black; color:white;
+        display:flex; align-items:center; justify-content:center; z-index:9999; font-size:24px;
+        transition: opacity 0.5s; pointer-events:none; opacity:1;
+    }
   </style>
+
   <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 </head>
 <body>
+
+  <div id="loadingOverlay">Loading Screen...</div>
   <div id="tilesContainer"></div>
-  <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec";
-    const SLIDE_DURATION_MS = 10000; // 10 seconds per slide
-    const urlParams = new URLSearchParams(window.location.search);
-    const SCREEN_ID = urlParams.get('screenId') || 1; // Read screenId from URL, default to 1
 
-    let allTilesData = [];
-    let slideTimer = null;
-    let currentSlide = 1;
-    let maxSlide = 1;
+  <div id="secretBtn" ondblclick="toggleEditMode()" title="Double Click or Ctrl+Shift+E to Edit"></div>
 
-    async function fetchData() {
-      try {
-        // Pass screenId to Code.gs for filtering
-        const res = await fetch(API_URL + "?screenId=" + SCREEN_ID + "&t=" + Date.now());
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        allTilesData = await res.json();
-        
-        if (allTilesData.length === 0) {
-          document.getElementById("tilesContainer").innerHTML = `<div style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;color:#f66'>No tiles found for Screen ${SCREEN_ID}</div>`;
-          return;
-        }
+  <div id="adminPanel">
+    <div class="panel-header">
+      <button onclick="document.getElementById('adminPanel').classList.toggle('collapsed')" style="background:none; border:none; color:white; cursor:pointer;">➜</button>
+      <span>EDITOR</span>
+      <button onclick="toggleEditMode()" style="background:#ef4444; border:none; color:white; padding:2px 6px; border-radius:4px;">EXIT</button>
+    </div>
 
-        maxSlide = allTilesData.reduce((max, t) => Math.max(max, t.slideId || 1), 1);
-        
-        renderTiles();
-        startSlideShow();
+    <div style="background:#333; padding:10px; border-radius:4px; margin-bottom:15px;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label style="color:white; font-weight:bold;">Editing Slide ID:</label>
+        <div style="display:flex; gap:5px;">
+            <button class="btn" style="margin:0; width:30px;" onclick="changeEditorSlide(-1)">◀</button>
+            <input type="number" id="globalSlideId" value="1" style="text-align:center;" readonly>
+            <button class="btn" style="margin:0; width:30px;" onclick="changeEditorSlide(1)">▶</button>
+        </div>
+      </div>
+      <div style="margin-top:5px;">
+         <label><input type="checkbox" id="snapGrid"> Snap to 5% Grid</label>
+      </div>
+    </div>
 
-      } catch (e) {
-        console.error(e);
-        document.getElementById("tilesContainer").innerHTML = `<div style="color:red;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:32px">Error: ${e.message}</div>`;
-      }
-    }
+    <div id="tileForm" style="opacity:0.5; pointer-events:none;">
+      <div class="row">
+         <div class="form-group"><label>Screen ID</label><input type="number" id="inp-screenId" onchange="updateActiveTile('screenId', this.value)"></div>
+         <div class="form-group"><label>Slide ID</label><input type="number" id="inp-slideId" onchange="updateActiveTile('slideId', this.value)"></div>
+      </div>
 
-    function renderTiles() {
-      const container = document.getElementById("tilesContainer");
-      container.innerHTML = "";
+      <div class="form-group">
+        <label>Type</label>
+        <select id="inp-type" onchange="updateActiveTile('type', this.value)">
+            <optgroup label="Basic"><option value="text">Text</option><option value="image">Image</option><option value="video">Video</option><option value="iframe">Iframe</option></optgroup>
+            <optgroup label="Data"><option value="clock">Clock</option><option value="weather_detailed">Weather</option><option value="stock">Stock</option><option value="crypto">Crypto</option><option value="rss">RSS</option></optgroup>
+            <optgroup label="Media"><option value="youtube">YouTube</option><option value="marquee">Marquee</option><option value="map">Map</option><option value="qrcode">QR Code</option></optgroup>
+            <optgroup label="Shapes"><option value="shape">Shape</option><option value="gradient">Gradient</option></optgroup>
+        </select>
+      </div>
+      <div class="form-group"><label>Content</label><textarea id="inp-content" rows="3" oninput="updateActiveTile('content', this.value)"></textarea></div>
+
+      <div class="row">
+        <div class="form-group"><label>X (%)</label><input type="number" step="0.1" id="inp-x" onchange="updateActiveTile('x', this.value + '%')"></div>
+        <div class="form-group"><label>Y (%)</label><input type="number" step="0.1" id="inp-y" onchange="updateActiveTile('y', this.value + '%')"></div>
+      </div>
+      <div class="row">
+        <div class="form-group"><label>W (%)</label><input type="number" step="0.1" id="inp-width" onchange="updateActiveTile('width', this.value + '%')"></div>
+        <div class="form-group"><label>H (%)</label><input type="number" step="0.1" id="inp-height" onchange="updateActiveTile('height', this.value + '%')"></div>
+      </div>
       
-      allTilesData.forEach(t => {
-        const tile = document.createElement("div");
-        tile.className = "tile";
-        tile.setAttribute('data-slide-id', t.slideId || 1);
+      <div class="row">
+        <div class="form-group"><label>Bg Color</label><input type="color" id="inp-bgColor" style="height:30px; padding:0;" onchange="updateActiveTile('bgColor', this.value)"></div>
+        <div class="form-group"><label>Text Color</label><input type="color" id="inp-textColor" style="height:30px; padding:0;" onchange="updateActiveTile('textColor', this.value)"></div>
+      </div>
+      <div class="row">
+        <div class="form-group"><label>Font Size</label><input id="inp-fontSize" onchange="updateActiveTile('fontSize', this.value)"></div>
+        <div class="form-group"><label>Z-Index</label><input type="number" id="inp-zIndex" onchange="updateActiveTile('zIndex', this.value)"></div>
+      </div>
 
-        // Common Styles
-        tile.style.left   = t.x || "0%";
-        tile.style.top    = t.y || "0%";
-        tile.style.width  = t.width || "30%";
-        tile.style.height = t.height || "20%";
-        tile.style.background = t.bgcolor || "rgba(0,0,0,0.6)";
-        tile.style.color = t.textcolor || "white";
-        tile.style.fontSize = t.fontsize || "24px";
-        tile.style.fontWeight = t.bold === "yes" ? "bold" : "normal";
-        tile.style.textAlign = t.align || "center";
-        tile.style.padding = t.padding || "20px";
-        tile.style.borderRadius = t.radius || "20px";
-        tile.style.boxShadow = t.shadow || "0 8px 32px rgba(0,0,0,0.6)";
-        tile.style.opacity = t.opacity ?? 1;
-        tile.style.transform = t.rotate ? `rotate(${t.rotate}deg)` : "";
-        tile.style.zIndex = t.zindex || "1";
-        tile.style.display = "flex";
-        tile.style.alignItems = "center";
-        tile.style.justifyContent = "center";
-        tile.style.textShadow = "0 2px 8px rgba(0,0,0,0.8)";
-        if(t.fontfamily) tile.style.fontFamily = t.fontfamily;
+      <button class="btn btn-del" onclick="deleteActiveTile()">Delete Selected</button>
+    </div>
 
-        // Initially hide tiles that are not on the first slide
-        if (t.slideId > 1) {
-            tile.classList.add('slide-hidden');
-        } else {
-            tile.classList.add('slide-active');
-        }
+    <hr style="border-color:#333; margin: 15px 0; width:100%;">
+    <button class="btn btn-add" onclick="addNewTile()">+ Add Tile to Slide</button>
+    <button class="btn btn-save" onclick="exportData()">EXPORT DATA</button>
+    <div style="font-size:10px; color:#888; text-align:center; margin-top:5px;">Copy -> Paste into Google Sheets (A2)</div>
+  </div>
 
-        // --- TYPE LOGIC (UNCHANGED) ---
-        if (t.type === "text" && t.content) {
-          tile.innerHTML = t.content.replace(/\\n/g, "<br>");
-        }
-        else if (t.type === "image" && t.content) {
-          tile.innerHTML = `<img src="${t.content}" alt="">`;
-        }
-        else if (t.type === "video" && t.content) {
-          if (t.content.match(/\.(mp4|webm|mov|ogg)/i)) {
-            const vid = document.createElement('video');
-            vid.src = t.content;
-            vid.muted = true;
-            vid.autoplay = true;
-            vid.playsInline = true;
-            vid.style.width = '100%';
-            vid.style.height = '100%';
-            vid.style.objectFit = 'cover';
-            
-            const mode = t.videomode || 'normal';
-            if (mode === 'normal') {
-              vid.loop = true;
-            } else {
-              vid.loop = false;
-              let interval;
-              const fps = 30;
-              const step = 1.0 / fps;
-              const playReverse = () => {
-                vid.pause();
-                clearInterval(interval);
-                interval = setInterval(() => {
-                  vid.currentTime = Math.max(0, vid.currentTime - step);
-                  if (vid.currentTime <= 0) {
-                    clearInterval(interval);
-                    if (mode === 'alternate') vid.play();
-                    else { vid.currentTime = vid.duration; playReverse(); }
-                  }
-                }, 1000 / fps);
-              };
-              if (mode === 'reverse') {
-                 vid.autoplay = false;
-                 vid.addEventListener('loadeddata', () => {
-                   vid.currentTime = vid.duration;
-                   playReverse();
-                 });
-              }
-              if (mode === 'alternate') {
-                vid.onended = () => playReverse();
-              }
-            }
-            tile.appendChild(vid);
-          } else if (t.content.includes("vimeo")) {
-            const id = t.content.match(/vimeo.*\/(\d+)/)?.[1];
-            if (id) tile.innerHTML = `<iframe src="https://player.vimeo.com/video/${id}?autoplay=1&loop=1&muted=1&background=1" allow="autoplay; fullscreen" style="border:0;"></iframe>`;
-          }
-        }
-        else if (t.type === "clock") {
-          tile.innerHTML = `<div style="font-size:3em;font-weight:bold">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>`;
-          setInterval(() => {
-            tile.querySelector("div")?.replaceWith(tile.querySelector("div").cloneNode(true));
-            tile.querySelector("div").textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-          }, 1000);
-        }
-        else if (t.type === "shape") {
-          tile.innerHTML = "";
-        }
-        else if (t.type === "iframe" && t.content) {
-          tile.innerHTML = `<iframe src="${t.content}" style="width:100%;height:100%;border:0;"></iframe>`;
-        }
-        else if (t.type === "date") {
-          tile.innerHTML = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-        }
-        else if (t.type === "weather" && t.content) {
-          fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=3`).then(r => r.text()).then(txt => { tile.innerHTML = txt; }).catch(() => { tile.innerHTML = "Weather unavailable"; });
-        }
-        else if (t.type === "rss" && t.content) {
-          fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(t.content)}`).then(r => r.json()).then(feed => {
-            if (!feed.items) { tile.innerHTML = "RSS unavailable"; return; }
-            const headlines = feed.items.map(i => i.title).join(" • ");
-            tile.innerHTML = `<div class="rssTicker">${headlines}</div>`;
-            tile.querySelector(".rssTicker").style.whiteSpace = "nowrap";
-            tile.querySelector(".rssTicker").style.animation = "marquee 30s linear infinite";
-          }).catch(() => { tile.innerHTML = "RSS error"; });
-        }
-        else if (t.type === "quote") {
-          fetch("https://api.quotable.io/random").then(r => r.json()).then(q => { tile.innerHTML = `"${q.content}" — ${q.author}`; }).catch(() => { tile.innerHTML = "Quote unavailable"; });
-        }
-        else if (t.type === "countdown" && t.content) {
-          function updateCountdown() {
-            const end = new Date(t.content);
-            const diff = end - new Date();
-            if (diff <= 0) { tile.innerHTML = "Time's up!"; return; }
-            const d = Math.floor(diff / (1000*60*60*24));
-            const h = Math.floor((diff / (1000*60*60)) % 24);
-            const m = Math.floor((diff / (1000*60)) % 60);
-            const s = Math.floor((diff / 1000) % 60);
-            tile.innerHTML = `${d}d ${h}h ${m}m ${s}s`;
-          }
-          updateCountdown(); setInterval(updateCountdown, 1000);
-        }
-        else if (t.type === "youtube" && t.content) {
-          const id = t.content.match(/(?:v=|youtu\.be\/)([^&]+)/)?.[1];
-          if (id) tile.innerHTML = `<iframe src="https://www.youtube.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}&controls=0&modestbranding=1" style="width:100%;height:100%;border:0;" allow="autoplay"></iframe>`;
-        }
-        else if (t.type === "timer" && t.content) {
-          function updateTimer() {
-            const diff = new Date() - new Date(t.content);
-            const d = Math.floor(diff / (1000*60*60*24));
-            const h = Math.floor((diff / (1000*60*60)) % 24);
-            const m = Math.floor((diff / (1000*60)) % 60);
-            const s = Math.floor((diff / 1000) % 60);
-            tile.innerHTML = `${d}d ${h}h ${m}m ${s}s`;
-          }
-          updateTimer(); setInterval(updateTimer, 1000);
-        }
-        else if (t.type === "weather_detailed" && t.content) {
-          fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`).then(r => r.json()).then(w => {
-            const now = w.current_condition[0];
-            tile.innerHTML = `${now.temp_F}°F<br>${now.weatherDesc[0].value}<br>Wind ${now.windspeedMiles} mph<br>Humidity ${now.humidity}%`;
-          }).catch(() => tile.innerHTML = "Weather unavailable");
-        }
-        else if (t.type === "stock" && t.content) {
-          fetch(`https://api.finage.co.uk/last/stock/${t.content}?apikey=demo`).then(r => r.json()).then(s => { tile.innerHTML = `${t.content}: $${s.price}`; }).catch(() => tile.innerHTML = "Stock error");
-        }
-        else if (t.type === "crypto" && t.content) {
-          fetch(`https://api.coinbase.com/v2/prices/${t.content}-USD/spot`).then(r => r.json()).then(s => tile.innerHTML = `${t.content}: $${s.data.amount}`).catch(() => tile.innerHTML = "Crypto unavailable");
-        }
-        else if (t.type === "audio" && t.content) {
-          tile.innerHTML = `<audio autoplay loop style="width:100%;"><source src="${t.content}"></audio>`;
-        }
-        else if (t.type === "qrcode" && t.content) {
-          tile.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(t.content)}">`;
-        }
-        else if (t.type === "map" && t.content) {
-          tile.innerHTML = `<iframe width="100%" height="100%" style="border:0;" src="https://www.google.com/maps?q=$?q=${encodeURIComponent(t.content)}&output=embed"></iframe>`;
-        }
-        else if (t.type === "marquee" && t.content) {
-          tile.innerHTML = `<div class="marquee">${t.content}</div>`;
-        }
-        else if (t.type === "gradient" && t.content) {
-          const [c1,c2] = t.content.split(",");
-          tile.style.background = `linear-gradient(135deg, ${c1}, ${c2})`;
-        }
-        else if (t.type === "sheetcell" && t.content) {
-          const [url, cell] = t.content.split("#");
-          fetch(url).then(r => r.text()).then(csv => {
-            const rows = csv.split("\n").map(r => r.split(","));
-            const col = cell.match(/[A-Za-z]+/)[0].toUpperCase();
-            const row = parseInt(cell.match(/\d+/)[0], 10);
-            const colIndex = col.charCodeAt(0) - 65;
-            tile.innerHTML = rows[row - 1]?.[colIndex] ?? "N/A";
-          }).catch(() => tile.innerHTML = "Cell error");
-        }
-        else if (t.type === "flipboard" && t.content) {
-          tile.style.fontSize = "3em"; tile.style.fontFamily = "monospace"; tile.innerHTML = t.content;
-        }
-        else if (t.type === "progress" && t.content) {
-          const pct = parseFloat(t.content) || 0;
-          tile.innerHTML = `<div style="width:90%;height:25%;background:#333;border-radius:20px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#4caf50;border-radius:20px"></div></div><div style="margin-top:10px;font-size:1.2em">${pct}%</div>`;
-        }
-        else if (t.type === "emojiWeather" && t.content) {
-          fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`).then(r => r.json()).then(w => {
-            const cond = w.current_condition[0].weatherDesc[0].value.toLowerCase();
-            let emoji = "☀️";
-            if (cond.includes("rain")) emoji = "🌧️"; else if (cond.includes("snow")) emoji = "❄️"; else if (cond.includes("cloud")) emoji = "☁️"; else if (cond.includes("storm")) emoji = "⛈️";
-            tile.innerHTML = `${emoji}<br>${t.content}`;
-          }).catch(()=> tile.innerHTML = "Weather error");
-        }
-        else if (t.type === "html" && t.content) {
-          tile.innerHTML = t.content;
-        }
-        else if (t.type === "lottie" && t.content) {
-          tile.innerHTML = `<lottie-player src="${t.content}" background="transparent" speed="1" loop autoplay></lottie-player>`;
-        }
-        else if (t.type === "icon" && t.content) {
-          tile.innerHTML = `<div style="font-size:4em">${t.content}</div>`;
-        }
-        else if (t.type === "avatar" && t.content) {
-          tile.innerHTML = `<img src="${t.content}" style="width:80%;height:80%;border-radius:50%;object-fit:cover;">`;
-        }
-        else if (t.type === "bar" && t.content) {
-          const nums = t.content.split(",").map(n=>parseFloat(n));
-          const max = Math.max(...nums);
-          tile.style.flexDirection = "row"; tile.style.alignItems = "flex-end";
-          nums.forEach(n=>{
-            const bar = document.createElement("div");
-            bar.style.width = `${100/nums.length}%`; bar.style.height = `${(n/max)*80}%`;
-            bar.style.background = "#4caf50"; bar.style.margin = "0 2px";
-            tile.appendChild(bar);
-          });
-        }
-        else if (t.type === "pie" && t.content) {
-          const nums = t.content.split(",").map(Number);
-          const total = nums.reduce((a,b)=>a+b,0);
-          let offset = 0;
-          tile.style.borderRadius = "50%";
-          tile.style.background = `conic-gradient(${nums.map((n,i)=> {
-            const pct = (n/total)*360; const start = offset; offset += pct;
-            return `${["#4caf50","#2196f3","#ff9800","#e91e63","#9c27b0"][i%5]} ${start}deg ${offset}deg`;
-          }).join(",")})`;
-        }
-        else if (t.type === "list" && t.content) {
-          const items = t.content.split("\\n").map(i=>`<li>${i}</li>`).join("");
-          tile.innerHTML = `<ul style="text-align:left;padding-left:20px">${items}</ul>`;
-        }
-        else if (t.type === "table" && t.content) {
-          const rows = t.content.split("\\n").map(r=>r.split(","));
-          tile.innerHTML = `<table style="width:100%;border-collapse:collapse;text-align:center">${rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #666;padding:4px">${c}</td>`).join("")}</tr>`).join("")}</table>`;
-        }
-        else if (t.type === "status" && t.content) {
-          const v = t.content.toLowerCase();
-          let color = "#0f0";
-          if (v.includes("warn")) color = "#ff0"; else if (v.includes("alert") || v.includes("error")) color = "#f00";
-          tile.style.background = color; tile.innerHTML = t.content.toUpperCase();
-        }
-        else if (t.type === "mic") {
-           tile.innerHTML = `<div style="width:100%;display:flex;align-items:flex-end;gap:4px;"></div>`;
-           const bars = Array.from({length:20}).map(()=>{
-             const b=document.createElement("div");
-             b.style.width="4%";b.style.height="20%";b.style.background="#4caf50";
-             tile.firstChild.appendChild(b); return b;
-           });
-           // NOTE: MIC/AUDIO VISUALIZERS MAY REQUIRE HTTPS/USER INTERACTION
-        }
-        else if (t.type === "particles") {
-           const c=document.createElement("canvas"); tile.appendChild(c);
-           const ctx=c.getContext("2d");
-           const resize=()=>{c.width=tile.clientWidth;c.height=tile.clientHeight;}; resize();
-           const parts=Array.from({length:40},()=>({x:Math.random()*c.width,y:Math.random()*c.height,vx:(Math.random()-.5),vy:(Math.random()-.5)}));
-           const anim=()=>{
-             ctx.clearRect(0,0,c.width,c.height);
-             parts.forEach(p=>{
-               p.x+=p.vx; p.y+=p.vy;
-               if(p.x<0||p.x>c.width)p.vx*=-1; if(p.y<0||p.y>c.height)p.vy*=-1;
-               ctx.fillStyle="white"; ctx.fillRect(p.x,p.y,3,3);
-             });
-             requestAnimationFrame(anim);
-           };
-           anim();
-        }
-        else if (t.type === "3dmodel" && t.content) {
-          tile.innerHTML = `<model-viewer src="${t.content}" auto-rotate camera-controls style="width:100%;height:100%"></model-viewer>`;
-        }
-        else if (t.type === "scene" && t.content) {
-           const imgs = t.content.split(","); let idx = 0;
-           tile.innerHTML = `<img src="${imgs[0]}" style="width:100%;height:100%;object-fit:cover;">`;
-           setInterval(()=>{ idx = (idx+1)%imgs.length; tile.querySelector("img").src = imgs[idx]; }, 5000);
-        }
-        else if (t.type === "weather_icon" && t.content) {
-           fetch(`https://wttr.in/${encodeURIComponent(t.content)}?format=j1`).then(r=>r.json()).then(w=>{
-             const cond = w.current_condition[0].weatherDesc[0].value.toLowerCase();
-             let icon = "☀️";
-             if (cond.includes("rain")) icon="🌧️"; if (cond.includes("snow")) icon="❄️"; if (cond.includes("storm")) icon="⛈️"; if (cond.includes("cloud")) icon="☁️";
-             tile.innerHTML = `<div style="font-size:3em">${icon}</div><br>${t.content}`;
-           }).catch(()=> tile.innerHTML="Weather error");
-        }
-        else if (t.type === "openai" && t.content) {
-           tile.innerHTML = "Loading AI...";
-           fetch("YOUR_PROXY?prompt="+encodeURIComponent(t.content)).then(r=>r.text()).then(txt=>tile.innerHTML=txt).catch(()=>tile.innerHTML="AI error");
-        }
-        else if (t.type === "random_image" && t.content) {
-           tile.innerHTML = `<img src="https://source.unsplash.com/800x800/?${encodeURIComponent(t.content)}">`;
-        }
-        else if (t.type === "gif" && t.content) {
-           tile.innerHTML = `<img src="${t.content}" style="width:100%;height:100%;object-fit:cover;">`;
-        }
-        else if (t.type === "menu" && t.content) {
-           const items = t.content.split("\\n");
-           tile.style.flexDirection = "column";
-           tile.innerHTML = items.map(i => `<button style="margin:5px;padding:10px;border-radius:8px;background:#444;color:white;font-size:1.1em">${i}</button>`).join("");
-        }
-        else if (t.type === "carousel" && t.content) {
-           const list = t.content.split(","); let i = 0;
-           tile.innerHTML = `<img src="${list[0]}" style="width:100%;height:100%;object-fit:cover;">`;
-           setInterval(()=>{ i=(i+1)%list.length; tile.querySelector("img").src=list[i]; },4000);
-        }
+  <div id="exportModal">
+    <h3 style="margin-top:0; color:#10b981;">Export Data for Google Sheets</h3>
+    <p style="font-size:12px; color:#ccc">
+        1. Click the box below.<br>
+        2. Select All (Ctrl+A) and Copy (Ctrl+C).<br>
+        3. Go to your Google Sheet.<br>
+        4. Click Cell <b>A2</b> and Paste (Ctrl+V).
+    </p>
+    <textarea id="exportData" readonly onclick="this.select()"></textarea>
+    <button class="btn btn-save" onclick="document.getElementById('exportModal').style.display='none'">Close</button>
+  </div>
 
-        container.appendChild(tile);
-      });
+<script>
+  // --- CONFIG ---
+  const API_URL = "https://script.google.com/macros/s/AKfycbxPQCmFSUG_9W2N62hqo7tPI6M_T9GCFD2FveCnA8uOYZ0lHLmSNMQDIufXP03vmybZfg/exec"; 
+  const SLIDE_DURATION_MS = 15000;
+  
+  // --- STATE ---
+  let tiles = [];
+  let isEditing = false;
+  let activeTileId = null; // using array index
+  let slideTimer;
+  let refreshTimer;
+  let currentPlaySlide = 1;
+  let currentEditSlide = 1;
+  let maxSlide = 1;
+  
+  const urlParams = new URLSearchParams(window.location.search);
+  const SCREEN_ID = parseInt(urlParams.get('screenId')) || 1;
+
+  // --- INITIALIZATION ---
+  async function loadData() {
+    try {
+      document.getElementById('loadingOverlay').style.opacity = '1';
+      const res = await fetch(`${API_URL}?screenId=${SCREEN_ID}&t=${Date.now()}`);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      
+      // Data Normalization
+      tiles = data.map(t => ({
+        ...t,
+        screenId: parseInt(t.screenId) || 1,
+        slideId: parseInt(t.slideId) || 1,
+        visible: t.visible !== false,
+        x: normalizeUnit(t.x),
+        y: normalizeUnit(t.y),
+        width: normalizeUnit(t.width),
+        height: normalizeUnit(t.height),
+        zIndex: parseInt(t.zIndex) || 1
+      }));
+
+      // Calc max slide
+      maxSlide = tiles.reduce((max, t) => Math.max(max, t.slideId), 1);
+      
+      renderBoard();
+      startSlideshow();
+      
+      document.getElementById('loadingOverlay').style.opacity = '0';
+    } catch (e) {
+      console.error(e);
+      document.getElementById('loadingOverlay').textContent = "Error Loading Data";
     }
+  }
+
+  function normalizeUnit(val) {
+    if (!val) return "0%";
+    // If it's a raw number or string number, assume % for compatibility
+    if (!isNaN(val)) return val + "%"; 
+    if (val.toString().includes("px")) {
+        // Convert pixels to approximation if user messed up manual entry
+        return "10%"; 
+    }
+    return val; 
+  }
+
+  // --- RENDERING ---
+  function renderBoard() {
+    const container = document.getElementById("tilesContainer");
+    container.innerHTML = ""; // Clear board
     
-    // --- SLIDESHOW LOGIC ---
-    function showSlide(id) {
-        const tiles = document.querySelectorAll('.tile');
-        tiles.forEach(tile => {
-            const slideId = parseInt(tile.getAttribute('data-slide-id'));
-            if (slideId === id) {
-                // Show the tile (Fade in)
-                tile.classList.remove('slide-hidden');
-                tile.classList.add('slide-active');
-            } else {
-                // Hide the tile (Fade out)
-                tile.classList.remove('slide-active');
-                tile.classList.add('slide-hidden');
-            }
-        });
-    }
+    // Determine which slide to show
+    const visibleSlide = isEditing ? currentEditSlide : currentPlaySlide;
+    
+    tiles.forEach((t, index) => {
+      // In Play Mode: Filter by visible slide. In Edit Mode: Filter by Edit Slide
+      if (!isEditing && t.slideId !== visibleSlide) return;
+      if (isEditing && t.slideId !== currentEditSlide) return;
+      if (!t.visible && !isEditing) return;
 
-    function advanceSlide() {
-        currentSlide++;
-        if (currentSlide > maxSlide) {
-            currentSlide = 1; // Loop back to the first slide
-            // When looping, refetch data to catch updates from the Admin panel
-            fetchData(); 
-        } else {
-            showSlide(currentSlide);
-        }
-    }
+      const el = document.createElement("div");
+      el.className = "tile";
+      el.dataset.index = index;
+      
+      // Apply geometry
+      el.style.left = t.x; 
+      el.style.top = t.y;
+      el.style.width = t.width; 
+      el.style.height = t.height;
+      el.style.zIndex = t.zIndex;
 
-    function startSlideShow() {
-        if (slideTimer) clearInterval(slideTimer);
+      // Apply styling
+      el.style.backgroundColor = t.bgColor || "rgba(0,0,0,0.5)";
+      el.style.color = t.textColor || "white";
+      el.style.fontSize = t.fontSize || "24px";
+      el.style.padding = t.padding || "10px";
+      el.style.borderRadius = t.radius || "0px";
+      el.style.textAlign = t.align || "center";
+      el.style.display = "flex";
+      el.style.alignItems = "center";
+      el.style.justifyContent = "center";
+
+      // Render Content
+      el.innerHTML = getTileContent(t);
+
+      // Editor Handles
+      if (isEditing) {
+        el.onmousedown = (e) => handleDragStart(e, index, el);
+        el.ontouchstart = (e) => handleDragStart(e, index, el); // Touch support
         
-        // Only start the timer if there's more than one slide to show
-        if (maxSlide > 1) {
-            slideTimer = setInterval(advanceSlide, SLIDE_DURATION_MS);
-            console.log(`Slideshow started for Screen ${SCREEN_ID}. Rotating ${maxSlide} slides every ${SLIDE_DURATION_MS / 1000}s.`);
-        } else {
-             console.log(`Only one slide for Screen ${SCREEN_ID}. Slideshow disabled.`);
-        }
-    }
+        // Add 4 corner handles
+        ['tl','tr','bl','br'].forEach(pos => {
+            const h = document.createElement('div');
+            h.className = `resize-handle rh-${pos}`;
+            h.onmousedown = (e) => handleResizeStart(e, index, el, pos);
+            h.ontouchstart = (e) => handleResizeStart(e, index, el, pos);
+            el.appendChild(h);
+        });
+      }
+      
+      container.appendChild(el);
+    });
+
+    // Start independent clocks
+    startClocks();
+  }
+
+  function getTileContent(t) {
+      if(!t.content) return `<span style="font-size:10px; opacity:0.5">${t.type}</span>`;
+      
+      switch(t.type) {
+          case 'image': return `<img src="${t.content}">`;
+          case 'video': return isEditing ? `[Video]` : `<video src="${t.content}" autoplay loop muted playsinline></video>`;
+          case 'text': return t.content.replace(/\n/g, '<br>');
+          case 'clock': return `<div class="live-clock">${new Date().toLocaleTimeString()}</div>`;
+          case 'iframe': return isEditing ? `[Iframe]` : `<iframe src="${t.content}" style="border:0; width:100%; height:100%"></iframe>`;
+          case 'marquee': return `<div class="marquee">${t.content}</div>`;
+          case 'html': return t.content;
+          default: return t.content;
+      }
+  }
+
+  function startClocks() {
+      // Update clocks independently of re-renders
+      const clocks = document.querySelectorAll('.live-clock');
+      if(clocks.length > 0) {
+          if(window.clockInterval) clearInterval(window.clockInterval);
+          window.clockInterval = setInterval(() => {
+              document.querySelectorAll('.live-clock').forEach(c => c.innerText = new Date().toLocaleTimeString());
+          }, 1000);
+      }
+  }
+
+  // --- SLIDESHOW LOGIC ---
+  function startSlideshow() {
+    if (slideTimer) clearInterval(slideTimer);
+    slideTimer = setInterval(() => {
+      if (isEditing) return;
+      currentPlaySlide++;
+      if (currentPlaySlide > maxSlide) currentPlaySlide = 1;
+      renderBoard(); // Simple re-render for slide change
+    }, SLIDE_DURATION_MS);
+  }
+
+  // --- EDITOR LOGIC ---
+  function toggleEditMode() {
+    isEditing = !isEditing;
+    document.body.classList.toggle("editing");
     
-    // Start the whole process
-    fetchData();
-    // Re-fetch everything periodically to check for new tiles/changes
-    setInterval(fetchData, 60000); 
-  </script>
+    if (isEditing) {
+      // Stop auto-rotation and refresh
+      clearInterval(slideTimer);
+      clearInterval(refreshTimer);
+      
+      // Sync Editor slide to current play slide
+      currentEditSlide = currentPlaySlide;
+      document.getElementById('globalSlideId').value = currentEditSlide;
+      document.getElementById('adminPanel').classList.remove('collapsed');
+      
+      renderBoard();
+    } else {
+      // Resume
+      activeTileId = null;
+      loadData(); // Reload from server to reset changes or confirm save
+      refreshTimer = setInterval(loadData, 60000);
+      startSlideshow();
+    }
+  }
+
+  function changeEditorSlide(dir) {
+      currentEditSlide += dir;
+      if(currentEditSlide < 1) currentEditSlide = 1;
+      document.getElementById('globalSlideId').value = currentEditSlide;
+      activeTileId = null;
+      updateFormState();
+      renderBoard();
+  }
+
+  function activateTile(index) {
+    activeTileId = index;
+    document.querySelectorAll('.tile').forEach(el => el.classList.remove('selected'));
+    const el = document.querySelector(`.tile[data-index='${index}']`);
+    if(el) el.classList.add('selected');
+    
+    // Populate Form
+    const t = tiles[index];
+    const map = {
+        'type': t.type, 'content': t.content, 
+        'x': parseFloat(t.x), 'y': parseFloat(t.y), 
+        'width': parseFloat(t.width), 'height': parseFloat(t.height),
+        'bgColor': t.bgColor, 'textColor': t.textColor,
+        'fontSize': t.fontSize, 'zIndex': t.zIndex,
+        'screenId': t.screenId, 'slideId': t.slideId
+    };
+    
+    for (const [key, val] of Object.entries(map)) {
+        const inp = document.getElementById(`inp-${key}`);
+        if(inp) inp.value = val || '';
+    }
+    updateFormState();
+  }
+  
+  function updateFormState() {
+      const form = document.getElementById('tileForm');
+      form.style.opacity = activeTileId !== null ? "1" : "0.5";
+      form.style.pointerEvents = activeTileId !== null ? "auto" : "none";
+  }
+
+  function updateActiveTile(key, value) {
+      if(activeTileId === null) return;
+      tiles[activeTileId][key] = value;
+      
+      // Update DOM directly for performance (no full re-render)
+      const el = document.querySelector(`.tile[data-index='${activeTileId}']`);
+      if(el) {
+          if(['x','y','width','height','zIndex','bgColor','color','fontSize'].includes(key)) {
+              if(key === 'x') el.style.left = value;
+              if(key === 'y') el.style.top = value;
+              if(key === 'width') el.style.width = value;
+              if(key === 'height') el.style.height = value;
+              if(key === 'bgColor') el.style.backgroundColor = value;
+          } else {
+              // Content/Type changes require re-render
+              renderBoard();
+              // Re-select
+              setTimeout(() => activateTile(activeTileId), 0);
+          }
+      }
+  }
+
+  function addNewTile() {
+      tiles.push({
+          screenId: SCREEN_ID,
+          slideId: currentEditSlide,
+          type: 'text',
+          content: 'New Tile',
+          x: '35%', y: '35%', width: '30%', height: '20%',
+          bgColor: '#3b82f6',
+          visible: true, zIndex: 10
+      });
+      renderBoard();
+      activateTile(tiles.length - 1);
+  }
+
+  function deleteActiveTile() {
+      if(activeTileId !== null && confirm("Delete this tile?")) {
+          tiles.splice(activeTileId, 1);
+          activeTileId = null;
+          renderBoard();
+          updateFormState();
+      }
+  }
+
+  // --- DRAG & DROP (Unified Mouse/Touch) ---
+  function handleDragStart(e, index, el) {
+    e.stopPropagation();
+    // Determine input type
+    const isTouch = e.type === 'touchstart';
+    const pageX = isTouch ? e.touches[0].pageX : e.pageX;
+    const pageY = isTouch ? e.touches[0].pageY : e.pageY;
+    
+    activateTile(index);
+    
+    const startLeft = el.offsetLeft;
+    const startTop = el.offsetTop;
+    const containerW = el.parentElement.clientWidth;
+    const containerH = el.parentElement.clientHeight;
+    
+    const snap = document.getElementById('snapGrid').checked;
+
+    function onMove(ev) {
+        ev.preventDefault();
+        const curX = isTouch ? ev.touches[0].pageX : ev.pageX;
+        const curY = isTouch ? ev.touches[0].pageY : ev.pageY;
+        
+        let newX = startLeft + (curX - pageX);
+        let newY = startTop + (curY - pageY);
+        
+        // Snap Logic (5% increments)
+        if (snap) {
+            const stepX = containerW * 0.05;
+            const stepY = containerH * 0.05;
+            newX = Math.round(newX / stepX) * stepX;
+            newY = Math.round(newY / stepY) * stepY;
+        }
+
+        el.style.left = newX + 'px';
+        el.style.top = newY + 'px';
+        
+        // Update inputs live (converted to %)
+        document.getElementById('inp-x').value = ((newX/containerW)*100).toFixed(2);
+        document.getElementById('inp-y').value = ((newY/containerH)*100).toFixed(2);
+    }
+
+    function onEnd() {
+        if(isTouch) {
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+        } else {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onEnd);
+        }
+        
+        // Save Final State
+        tiles[index].x = ((el.offsetLeft / containerW) * 100).toFixed(2) + "%";
+        tiles[index].y = ((el.offsetTop / containerH) * 100).toFixed(2) + "%";
+    }
+
+    if(isTouch) {
+        document.addEventListener('touchmove', onMove, {passive: false});
+        document.addEventListener('touchend', onEnd);
+    } else {
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+    }
+  }
+
+  // --- RESIZE LOGIC (Unified) ---
+  function handleResizeStart(e, index, el, corner) {
+    e.stopPropagation();
+    const isTouch = e.type === 'touchstart';
+    const pageX = isTouch ? e.touches[0].pageX : e.pageX;
+    const pageY = isTouch ? e.touches[0].pageY : e.pageY;
+
+    const startW = el.offsetWidth;
+    const startH = el.offsetHeight;
+    const startX = el.offsetLeft;
+    const startY = el.offsetTop;
+    const containerW = el.parentElement.clientWidth;
+    const containerH = el.parentElement.clientHeight;
+    
+    const snap = document.getElementById('snapGrid').checked;
+
+    function onMove(ev) {
+        ev.preventDefault();
+        const curX = isTouch ? ev.touches[0].pageX : ev.pageX;
+        const curY = isTouch ? ev.touches[0].pageY : ev.pageY;
+        const dx = curX - pageX;
+        const dy = curY - pageY;
+
+        let newW = startW, newH = startH, newX = startX, newY = startY;
+
+        // Calculate based on corner
+        if (corner.includes('r')) newW = startW + dx;
+        if (corner.includes('l')) { newW = startW - dx; newX = startX + dx; }
+        if (corner.includes('b')) newH = startH + dy;
+        if (corner.includes('t')) { newH = startH - dy; newY = startY + dy; }
+        
+        // Snap Dimensions
+        if(snap) {
+             const stepX = containerW * 0.05;
+             const stepY = containerH * 0.05;
+             newW = Math.round(newW / stepX) * stepX;
+             newH = Math.round(newH / stepY) * stepY;
+             // Note: Snapping position while resizing top/left is complex, omitted for stability
+        }
+
+        // Apply Min Size
+        if (newW > 20) { el.style.width = newW + 'px'; el.style.left = newX + 'px'; }
+        if (newH > 20) { el.style.height = newH + 'px'; el.style.top = newY + 'px'; }
+        
+        // Update Inputs
+        document.getElementById('inp-width').value = ((el.offsetWidth/containerW)*100).toFixed(2);
+        document.getElementById('inp-height').value = ((el.offsetHeight/containerH)*100).toFixed(2);
+    }
+
+    function onEnd() {
+        if(isTouch) {
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+        } else {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onEnd);
+        }
+        
+        tiles[index].width = ((el.offsetWidth / containerW) * 100).toFixed(2) + "%";
+        tiles[index].height = ((el.offsetHeight / containerH) * 100).toFixed(2) + "%";
+        tiles[index].x = ((el.offsetLeft / containerW) * 100).toFixed(2) + "%";
+        tiles[index].y = ((el.offsetTop / containerH) * 100).toFixed(2) + "%";
+    }
+
+    if(isTouch) {
+        document.addEventListener('touchmove', onMove, {passive: false});
+        document.addEventListener('touchend', onEnd);
+    } else {
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+    }
+  }
+
+  // --- EXPORT ---
+  function exportData() {
+      // EXACT COLUMN MATCHING CODE.GS
+      const headers = [
+        "visible", "screenId", "slideId", "type", "content", "videoMode",
+        "x", "y", "width", "height", 
+        "bgColor", "textColor", "fontFamily", "fontSize", "bold", "align", 
+        "padding", "radius", "shadow", 
+        "opacity", "rotate", "zIndex"
+      ];
+      
+      const tsv = tiles.map(t => {
+          return headers.map(h => {
+              let val = t[h];
+              if (val === undefined || val === null) return "";
+              if (h === 'visible') return val ? "TRUE" : "FALSE";
+              return val.toString().replace(/(\r\n|\n|\r)/gm, " "); // Clean newlines
+          }).join("\t");
+      }).join("\n");
+      
+      document.getElementById('exportData').value = tsv;
+      document.getElementById('exportModal').style.display = 'block';
+  }
+
+  // --- KEYBOARD SHORTCUT ---
+  document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+          e.preventDefault();
+          toggleEditMode();
+      }
+  });
+
+  // START
+  loadData();
+  refreshTimer = setInterval(loadData, 60000);
+
+</script>
 </body>
 </html>
